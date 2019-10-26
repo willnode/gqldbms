@@ -47,7 +47,7 @@ pub type SchemaFields = HashMap<String, FieldType>;
 
 fn schema() -> Document
 {
-	let uri = String::from("public/schema.graphql");
+	let uri = String::from("public/schema.gql");
     let mut file = File::open(uri).expect("Unable to open");
     let mut data = String::new();
     file.read_to_string(&mut data).expect("Empty");
@@ -58,7 +58,6 @@ fn traverse_object(object: &ObjectType) -> SchemaFields
 {
 	let mut fields = HashMap::new();
 	for field in &object.fields {
-		println!("  {}, {}", field.name, field.field_type);
 		fields.insert(field.name.clone(), get_field_type(&field.field_type));
 	}
 	fields
@@ -77,16 +76,17 @@ pub fn traverse_schema() -> SchemaClasses
 		match &def {
 			Definition::TypeDefinition(typedef) => {
 				match &typedef {
-					TypeDefinition::Scalar(scalar) => {
-						println!("scalar {}", scalar.name);
+					TypeDefinition::Scalar(_) => {
 					}
 					TypeDefinition::Object(object) => {
 						hashes.insert(object.name.clone(), SchemaType::Object(traverse_object(&object)));
 					}
-					_ => println!("Other typedef"),
+					_ => {
+
+					},
 				}
 			},
-			_ => println!("other def"),
+			_ => {},
 		}
 	}
 	hashes
