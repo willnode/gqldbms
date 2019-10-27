@@ -41,8 +41,13 @@ fn graphql_api(req: Request<Body>) -> ResponseFuture {
                 Value::String(query) => json.push_str(&query),
                 _ => json.push_str("{}"),
             }
-            let ast = parse_query(&json).unwrap();
-            schema::traverse_schema();
+            let ast = match parse_query(&json) {
+                Ok(v) => v,
+                _ => return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json!({"error":"Invalid GraphQL syntax"}).to_string()))?)
+            };
             let values = parsing::traverse_query(&ast);
             let data = json!({ "data": values });
             let response = Response::builder()
@@ -58,6 +63,10 @@ fn echo(req: Request<Body>) -> ResponseFuture {
     let mut response = Response::new(Body::empty());
 
     match (req.method(), req.uri().path()) {
+        (&Method::GET, "/data") => {
+            response.headers_mut().insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+            *response.body_mut() = Body::from(read_file("data.json"));
+        }
         (&Method::GET, "/graphiql") => {
             *response.body_mut() = Body::from(read_file("graphiql.html"));
         }

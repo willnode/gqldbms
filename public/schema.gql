@@ -4,12 +4,14 @@ type Query {
 }
 
 type User {
+  " @type as i32; "
   id: ID!
   username: String!
   posts: [Post!]!
 }
 
 type Post {
+  " @type as i32; "
   id: ID!
   title: String!
   author: User!

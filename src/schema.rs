@@ -5,16 +5,9 @@ use std::io::Read;
 use std::collections::HashMap;
 use std::ops::Deref;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FieldType {
-	pub is_array: bool,
-	pub is_array_non_nullable: bool,
-	pub name_type: String,
-	pub is_type_non_nullable: bool,
-}
 
-pub fn get_field_type(t: &Type) -> FieldType {
-	let mut r = FieldType {
+pub fn get_field_type(t: &Type) -> SchemaFieldReturnType {
+	let mut r = SchemaFieldReturnType {
 		is_array: false,
 		is_array_non_nullable: false,
 		name_type: String::new(),
@@ -42,12 +35,55 @@ pub fn get_field_type(t: &Type) -> FieldType {
 	r
 }
 
-pub type SchemaClasses = HashMap<String, SchemaType>;
-pub type SchemaFields = HashMap<String, FieldType>;
+pub fn get_data_type(t: &SchemaFieldReturnType, d: &str) -> SchemaFieldDataType {
+	let mut data_type = match &t.name_type[..] {
+		"ID" => "string",
+		"Int" => "i32",
+		"Float" => "f64",
+		"String" => "string",
+		"Boolean" => "bool",
+		n @ _ => n,
+	};
+	if d.contains("@type as i32;") {
+		data_type = "i32";
+	}
+	SchemaFieldDataType {
+		is_array: t.is_array,
+		is_indexed: t.name_type == "ID",
+		is_unique: t.name_type == "ID",
+	    name_type: data_type.to_owned()
+	}
+}
 
-fn schema() -> Document
+pub struct SchemaField {
+	pub name: String,
+	pub description: String,
+	pub data_type: SchemaFieldDataType,
+	pub return_type: SchemaFieldReturnType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SchemaFieldDataType {
+	pub name_type: String,
+	pub is_array: bool,
+	pub is_unique: bool,
+	pub is_indexed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SchemaFieldReturnType {
+	pub is_array: bool,
+	pub is_array_non_nullable: bool,
+	pub name_type: String,
+	pub is_type_non_nullable: bool,
+}
+
+pub type SchemaClasses = HashMap<String, SchemaType>;
+pub type SchemaFields = HashMap<String, SchemaField>;
+
+fn schema(file: &str) -> Document
 {
-	let uri = String::from("public/schema.gql");
+	let uri = String::from("public/") + file;
     let mut file = File::open(uri).expect("Unable to open");
     let mut data = String::new();
     file.read_to_string(&mut data).expect("Empty");
@@ -58,7 +94,15 @@ fn traverse_object(object: &ObjectType) -> SchemaFields
 {
 	let mut fields = HashMap::new();
 	for field in &object.fields {
-		fields.insert(field.name.clone(), get_field_type(&field.field_type));
+		let return_type = get_field_type(&field.field_type);
+		let description = match &field.description { Some(v) => v.clone(), _ => String::new()};
+		let data_type = get_data_type(&return_type, &description[..]);
+		fields.insert(field.name.clone(), SchemaField {
+			name: field.name.clone(),
+			description: description,
+			return_type: return_type,
+			data_type: data_type,
+		});
 	}
 	fields
 }
@@ -68,9 +112,9 @@ pub enum SchemaType {
 }
 
 
-pub fn traverse_schema() -> SchemaClasses
+pub fn traverse_schema(file: &str) -> SchemaClasses
 {
-	let doc = schema();
+	let doc = schema(file);
 	let mut hashes = HashMap::new();
 	for def in doc.definitions {
 		match &def {
@@ -90,4 +134,53 @@ pub fn traverse_schema() -> SchemaClasses
 		}
 	}
 	hashes
+}
+
+pub struct InstropectionParser {
+	pub schema: SchemaClasses,
+	pub database: serde_json::Value,
+}
+
+pub fn build_schema_instropection() -> InstropectionParser {
+	let mut fields = Vec::new();
+	let mut types = Vec::new();
+	let doc = schema("schema.gql");
+	for def in &doc.definitions {
+		match &def {
+			Definition::TypeDefinition(typedef) => {
+				match &typedef {
+					TypeDefinition::Scalar(_) => {
+					}
+					TypeDefinition::Object(object) => {
+						let mut subfields = Vec::new();
+						for field in &object.fields {
+							fields.push(json!({
+								"id": object.name.clone()+"."+ &field.name[..],
+								"name": field.name,
+								"description": field.description,
+							}));
+							subfields.push(object.name.clone()+"."+ &field.name[..]);
+						}
+						types.push(json!({
+							"id": object.name.clone(),
+							"name": object.name.clone(),
+							"kind": "OBJECT",
+							"description": &object.description,
+							"fields": subfields
+						}));
+					}
+					_ => {},
+				}
+			},
+			_ => {},
+		}
+	}
+	InstropectionParser {
+		schema: traverse_schema("instropection.gql"),
+		database: json!({
+			"__Type": types,
+			"__Field": fields,
+		})
+	}
+
 }
