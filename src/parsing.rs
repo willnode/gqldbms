@@ -11,20 +11,19 @@ struct QueryParser {
 	pub schema: schema::SchemaClasses,
 	pub database: Value,
 	pub hashmaps: DatabaseHashmaps,
-	pub instropection: schema::InstropectionParser,
 }
 
 #[derive(Debug)]
-struct ResolverInfo<'a> {
+struct ResolverInfo<'a, 'b> {
 	field_name: &'a str,
-	field_type: schema::SchemaFieldReturnType,
-	instropection: bool,
+	field_type: &'b schema::SchemaFieldReturnType,
+	fragments: &'a HashMap<String, FragmentDefinition>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TraverserInfo<'a> {
 	class_name: &'a str,
-	instropection: bool,
+	fragments: &'a HashMap<String, FragmentDefinition>,
 }
 
 fn database() -> Value
@@ -49,20 +48,21 @@ fn gql2serde_value(v:&graphql_parser::query::Value) -> Value {
 impl QueryParser {
 
 // Given Values, Apply filters to it
-fn find_match(&self, class_name:&String, iter:Vec<&Value>, args:&Vec<(String, graphql_parser::query::Value)>) -> Value
+fn find_match(&self, class_name:&String, iter:&Vec<Value>, args:&Vec<(String, graphql_parser::query::Value)>) -> Value
 {
-	let mut result : Vec<Value> = iter.into_iter().map(|x|{
+	let mut result : Vec<Value> = iter.iter().map(|x|{
 		match &self.database[&class_name] {
 			Value::Array(arr) => {
-				arr.into_iter().find(|y| {&y["id"] == x}).unwrap().clone()
+				arr.iter().find(|y| {&y["id"] == x}).unwrap().clone()
 			}
 			_ => Value::Null.clone(),
 		}
 	}).collect();
 	for (key, val) in args {
 		let val2 = gql2serde_value(val);
-		result = result.into_iter().filter(|x| {x[&key] == val2}).collect();
+		result = result.into_iter().filter(|x| {x[&key] == Value::Null || x[&key] == val2}).collect();
 	}
+
 	json!(result)
 }
 
@@ -72,6 +72,7 @@ fn resolve_id_to_object(&self, id:&Value, class_name:&String) -> Value
 	match id {
 			Value::Array(arr) => {
 				// Unpack array and resolve individually
+
 				json!(arr.iter().map(|x| self.resolve_id_to_object(x, &class_name)).collect::<Vec<Value>>())
 			},
 			x => {
@@ -82,7 +83,8 @@ fn resolve_id_to_object(&self, id:&Value, class_name:&String) -> Value
 				n @ _ => match &self.database[&n] {
 					Value::Array(arr) => {
 						// Unpack object
-						let idkey = match &self.hashmaps[&n[..]] { Some(v) => &v["id"], _ => panic!() };
+						let idkey = match &self.hashmaps[&n[..]] { Some(v) => &v["id"], _ => { panic!();} };
+
 						arr[match &idkey {
 							FieldHashmaps::String(h) => h[&x.as_str().unwrap()[..]],
 							FieldHashmaps::I32(h) => h[&x.as_i64().unwrap().try_into().unwrap()],
@@ -90,7 +92,7 @@ fn resolve_id_to_object(&self, id:&Value, class_name:&String) -> Value
 							_ => panic!()
 						}].clone()
 					},
-					n @ _ => {return json!(n);},
+					_ => {id.clone()},
 				}
 			}
 		}
@@ -99,110 +101,52 @@ fn resolve_id_to_object(&self, id:&Value, class_name:&String) -> Value
 
 pub fn resolve_field(&self, parent:&Value, args:&Vec<(String, graphql_parser::query::Value)>, context:&Field, info:ResolverInfo) -> Value
 {
-	match parent {
-		Value::Null => {
-			// Global fields on Query
-			// TODO: Look into args for filters
-			let ids = match &self.database[&info.field_type.name_type] {
-				// Get all IDs
-				Value::Array(arr) => arr.iter().map(|x| { &x["id"] }).collect(),
-				_ => Vec::new(),
-			};
-			let matches = self.find_match(&info.field_type.name_type, ids, args);
-			self.traverse_selection(&matches, &context.selection_set, TraverserInfo {
-				class_name: &info.field_type.name_type[..],
-				instropection: info.instropection,
-			})
-		}
-		_ => {
-			if parent[&info.field_name] == Value::Null {
-				return Value::Null;
-			}
-			self.traverse_selection(
-				&self.resolve_id_to_object(
-					&parent[&info.field_name],
-					&info.field_type.name_type
-				),
-				&context.selection_set, TraverserInfo {
-				class_name: &info.field_type.name_type[..],
-				instropection: info.instropection,
-			})
-		}
+	if parent[&info.field_name] == Value::Null {
+		return Value::Null;
 	}
+	let par = match &parent[&info.field_name] {
+		Value::Array(arr) => if !info.field_type.is_array {
+								self.resolve_id_to_object( &arr[0],
+									&info.field_type.name_type
+								)
+							} else {
+								self.find_match(&info.field_type.name_type, arr, args)
+							},
+		n @ _ => self.resolve_id_to_object( &n,
+									&info.field_type.name_type
+								) };
+
+	self.traverse_selection(
+		&par,
+		&context.selection_set, TraverserInfo {
+		class_name: &info.field_type.name_type[..],
+		fragments: info.fragments,
+	})
 }
+
 
 pub fn traverse_selection(&self, parent:&Value, context : &SelectionSet, info:TraverserInfo) -> Value
 {
-	let using_schema = if info.instropection { &self.instropection.schema } else { &self.schema };
 	match parent {
-		Value::Null => {
-			// Global query
-			let mut values = HashMap::new();
-			let sch = match using_schema.get(&info.class_name[..]) { Some(v) => v, _ => {return Value::Null;} };
-			for sel in &context.items {
-				match &sel {
-					Selection::Field(field) => {
-						match &sch {
-							schema::SchemaType::Object(fields) => {
-								if field.name == "__schema" {
-								values.insert(field.name.clone(), self.traverse_selection(
-									 	&Value::Null, &field.selection_set, TraverserInfo {
-										class_name: "__Schema",
-										instropection: true,
-									}));
-								} else if !fields.contains_key(&field.name) {
-									values.insert(field.name.clone(), Value::Null);
-								} else {
-
-								values.insert(field.name.clone(), self.resolve_field(
-									&Value::Null, &field.arguments, &field, ResolverInfo {
-										field_name: &field.name[..],
-										field_type: fields[&field.name].return_type.clone(),
-										instropection: info.instropection,
-									}));
-								}
-							}
-						}
-					}
-					_ => {},
-				};
-			}
-			json!(values)
-		}
 		Value::Array(arr) => {
-			if arr.len() == 0 {
-				return json!([]); // Workaround for later bug
+			let mut values : Vec<Value> = Vec::new();
+
+			for obj in arr {
+				values.push(self.traverse_selection(&obj, &context, info.clone()));
 			}
-			let mut values : Vec<HashMap<Name, Value>> = arr.iter().map(|_|{HashMap::new()}).collect();
-			let sch = match using_schema.get(&info.class_name[..]) { Some(v) => v, _ => {return Value::Null;} };
-			for sel in &context.items {
-				match &sel {
-					// Field for parent
-					Selection::Field(field) => {
-						match &sch {
-							schema::SchemaType::Object(fields) => {
-								for (i, obj) in arr.iter().enumerate() {
-									values[i].insert(field.name.clone(), self.resolve_field(
-										obj, &field.arguments, &field, ResolverInfo {
-										field_name: &field.name[..],
-										field_type: fields [&field.name].return_type.clone(),
-										instropection: info.instropection,
-									}));
-								}
-							}
-						}
-					}
-					_ => {},
-				};
-			}
+
 			json!(values)
 		}
 		_ => {
 			match &info.class_name[..] {
 				"String" | "ID" | "Number" | "Float" => parent.clone(),
 				_ => {
+
+					let sch = match self.schema.get(&info.class_name[..]) { Some(v) => v, _ => {return Value::Null;} };
+					match &sch {
+						schema::SchemaType::Enum(_) => parent.clone(),
+						_ => {
 					let mut values : HashMap<Name, Value> = HashMap::new();
-					let sch = match using_schema.get(&info.class_name[..]) { Some(v) => v, _ => {return Value::Null;} };
 					for sel in &context.items {
 						match &sel {
 							// Field for parent
@@ -210,20 +154,41 @@ pub fn traverse_selection(&self, parent:&Value, context : &SelectionSet, info:Tr
 								match &sch {
 									schema::SchemaType::Object(fields) => {
 										{
-											values.insert(field.name.clone(), self.resolve_field(
+											values.insert(field.name.clone(), match &fields.contains_key(&field.name) {
+												true => self.resolve_field(
 												&parent, &field.arguments, &field, ResolverInfo {
 												field_name: &field.name[..],
-												field_type: fields [&field.name].return_type.clone(),
-												instropection: info.instropection,
-											}));
+												field_type: &fields [&field.name].return_type,
+												fragments: &info.fragments,
+											}), false => Value::Null });
 										}
 									}
+									schema::SchemaType::Enum(_) => {
+
+										values.insert(field.name.clone(), parent.clone());
+									}
+								}
+							}
+							Selection::FragmentSpread(spread) => {
+								// traverse again, then unpack
+								let frag_values = self.traverse_selection(parent,
+									&info.fragments[&spread.fragment_name].selection_set, info.clone());
+								match frag_values {
+									Value::Object(obj) => {
+										for (name, val) in obj {
+											values.insert(name, val);
+										}
+									}
+									_ => panic!()
 								}
 							}
 							_ => {},
 						};
 					}
 					json!(values)
+						}
+					}
+
 		}
 			}
 		}
@@ -267,6 +232,7 @@ pub fn build_hashmaps(db : &Value, schema : &schema::SchemaClasses) -> DatabaseH
 			let (field_name, hash) = ("id".to_owned(), match &schema[name] {
 				schema::SchemaType::Object(obj) => match obj.get("id") {
 					Option::Some(field) => if !field.data_type.is_indexed {
+
 						panic!("id must be indexable!")
 					} else { match &field.data_type.name_type[..] {
 						"string" => FieldHashmaps::String(subindex_hashmaps(arr_classes, |value| value["id"].as_str().unwrap().to_string())),
@@ -274,9 +240,9 @@ pub fn build_hashmaps(db : &Value, schema : &schema::SchemaClasses) -> DatabaseH
 						"u64" => FieldHashmaps::U64(subindex_hashmaps(arr_classes, |value| value["id"].as_u64().unwrap())),
 						_ => panic!("id is not indexable!")
 					} },
-					_ => panic!("id is not exist in one of schema class!")
+					_ => { panic!("id is not exist in one of schema class!") }
 				},
-				// _ => panic!("An object is exist in DB, but in schema it's refered as something else")
+				 _ => panic!("An object is exist in DB, but in schema it's refered as something else")
 			});
 
 			let mut type_hash = HashMap::new();
@@ -288,34 +254,83 @@ pub fn build_hashmaps(db : &Value, schema : &schema::SchemaClasses) -> DatabaseH
 }
 
 pub fn traverse_query(ast : &Document) -> Value {
-	let sch = schema::traverse_schema("schema.gql");
+	// Load necessary files (should be done before server starts, actually)
+	let mut sch = schema::traverse_schema("schema.gql");
 	let instropection = schema::build_schema_instropection();
 	let mut db = database();
 	let dbmut = match db.as_object_mut() { Some(o) => o, _ => panic!("Database must be object!") };
 	dbmut.extend(instropection.database.as_object().unwrap().clone());
+	dbmut["Query"][0]["id"] = json!("Query");
+	dbmut["Query"][0]["__schema"] = json!("__Schema");
 	db = json!(dbmut);
+	let mut qhash = match &sch["Query"] { schema::SchemaType::Object(o) => o.clone(), _ => panic!() };
+	qhash.insert("id".to_owned(), schema::SchemaField {
+		name: "id".to_owned(),
+		description: "".to_owned(),
+		data_type: schema::SchemaFieldDataType {
+			name_type: "string".to_owned(),
+			is_array: false,
+			is_unique: false,
+			is_indexed: true,
+		},
+		return_type: schema::SchemaFieldReturnType {
+			is_array: false,
+			is_array_non_nullable: false,
+			name_type: "ID".to_owned(),
+			is_type_non_nullable: true,
+		},
+	});
+	qhash.insert("__schema".to_owned(), schema::SchemaField {
+		name: "__schema".to_owned(),
+		description: "".to_owned(),
+		data_type: schema::SchemaFieldDataType {
+			name_type: "__Schema".to_owned(),
+			is_array: false,
+			is_unique: false,
+			is_indexed: false,
+		},
+		return_type: schema::SchemaFieldReturnType {
+			is_array: false,
+			is_array_non_nullable: false,
+			name_type: "__Schema".to_owned(),
+			is_type_non_nullable: true,
+		},
+	});
+	sch.remove("Query");
+	sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash));
+	sch.extend(instropection.schema);
 
 	let hashmap = build_hashmaps(&db, &sch);
 	let worker = QueryParser {
 		schema: sch,
 		database: db,
 		hashmaps: hashmap,
-		instropection: instropection,
 	};
+	let mut fragments = HashMap::new();
+	// Look for fragments before doing actual operation
+	for def in &ast.definitions {
+		match &def {
+			Definition::Fragment(fragdef) => {
+				fragments.insert(fragdef.name.clone(), fragdef.clone());
+			},
+			_ => {},
+		}
+	}
+	// Start action
 	for def in &ast.definitions {
 		match &def {
 			Definition::Operation(opdef) => {
 				match &opdef {
 					OperationDefinition::Query(query) => {
-						return worker.traverse_selection(&Value::Null, &query.selection_set, TraverserInfo {
+						return worker.traverse_selection(&worker.database["Query"][0], &query.selection_set, TraverserInfo {
 							class_name: "Query",
-							instropection: false,
+							fragments: &fragments,
 						});
 					}
 					OperationDefinition::SelectionSet(sel) => {
-						return worker.traverse_selection(&Value::Null, &sel, TraverserInfo {
+						return worker.traverse_selection(&worker.database["Query"][0], &sel, TraverserInfo {
 							class_name: "Query",
-							instropection: false,
+							fragments: &fragments,
 						});
 					}
 					_ => return json!("Other op"),

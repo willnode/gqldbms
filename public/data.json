@@ -1,4 +1,9 @@
 {
+	"Query": [{
+		"id": 0,
+		"author": [1, 2],
+		"feed": [1, 2, 3]
+	}],
 	"User": [{
 		"id": 1,
 		"username": "John Doe",

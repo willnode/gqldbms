@@ -2,7 +2,7 @@ use graphql_parser::parse_schema;
 use graphql_parser::schema::*;
 use std::fs::File;
 use std::io::Read;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
 
@@ -55,6 +55,7 @@ pub fn get_data_type(t: &SchemaFieldReturnType, d: &str) -> SchemaFieldDataType 
 	}
 }
 
+#[derive(Clone, Debug)]
 pub struct SchemaField {
 	pub name: String,
 	pub description: String,
@@ -107,8 +108,10 @@ fn traverse_object(object: &ObjectType) -> SchemaFields
 	fields
 }
 
+#[derive(Clone, Debug)]
 pub enum SchemaType {
-	Object(SchemaFields)
+	Object(SchemaFields),
+	Enum(HashSet<String>),
 }
 
 
@@ -124,6 +127,10 @@ pub fn traverse_schema(file: &str) -> SchemaClasses
 					}
 					TypeDefinition::Object(object) => {
 						hashes.insert(object.name.clone(), SchemaType::Object(traverse_object(&object)));
+					}
+					TypeDefinition::Enum(enu) => {
+						let enus = enu.values.iter().map(|x| x.name.clone()).collect::<HashSet<String>>();
+						hashes.insert(enu.name.clone(), SchemaType::Enum(enus));
 					}
 					_ => {
 
@@ -144,12 +151,21 @@ pub struct InstropectionParser {
 pub fn build_schema_instropection() -> InstropectionParser {
 	let mut fields = Vec::new();
 	let mut types = Vec::new();
+	let mut enums = Vec::new();
 	let doc = schema("schema.gql");
+
 	for def in &doc.definitions {
 		match &def {
 			Definition::TypeDefinition(typedef) => {
 				match &typedef {
-					TypeDefinition::Scalar(_) => {
+					TypeDefinition::Scalar(object) => {
+						types.push(json!({
+							"id": object.name.clone(),
+							"name": object.name.clone(),
+							"kind": "SCALAR",
+							"description": &object.description,
+							"interfaces": []
+						}));
 					}
 					TypeDefinition::Object(object) => {
 						let mut subfields = Vec::new();
@@ -158,6 +174,9 @@ pub fn build_schema_instropection() -> InstropectionParser {
 								"id": object.name.clone()+"."+ &field.name[..],
 								"name": field.name,
 								"description": field.description,
+								"isDeprecated": false,
+								"args": [],
+								"type": get_field_type(&field.field_type).name_type,
 							}));
 							subfields.push(object.name.clone()+"."+ &field.name[..]);
 						}
@@ -166,7 +185,27 @@ pub fn build_schema_instropection() -> InstropectionParser {
 							"name": object.name.clone(),
 							"kind": "OBJECT",
 							"description": &object.description,
-							"fields": subfields
+							"fields": subfields,
+							"interfaces": []
+						}));
+					}
+					TypeDefinition::Enum(object) => {
+						let mut subvalues = Vec::new();
+						for value in &object.values {
+							enums.push(json!({
+								"id": object.name.clone()+"."+ &value.name[..],
+								"name": value.name,
+								"description": value.description,
+							}));
+							subvalues.push(object.name.clone()+"."+ &value.name[..]);
+						}
+						types.push(json!({
+							"id": object.name.clone(),
+							"name": object.name.clone(),
+							"kind": "ENUM",
+							"description": &object.description,
+							"enumValues": subvalues,
+							"interfaces": []
 						}));
 					}
 					_ => {},
@@ -175,11 +214,30 @@ pub fn build_schema_instropection() -> InstropectionParser {
 			_ => {},
 		}
 	}
+	let declared_types = types.iter().map(|x| x["id"].clone()).collect::<Vec<serde_json::Value>>();
+
+	for primitiv in vec!["ID", "Float", "Int", "String"] {
+		types.push(json!({
+							"id": primitiv.clone(),
+							"name": primitiv.clone(),
+							"kind": "SCALAR",
+							"description": null,
+							"interfaces": []
+						}));
+	}
 	InstropectionParser {
 		schema: traverse_schema("instropection.gql"),
 		database: json!({
+			"__Schema": [{
+				"id": "__Schema",
+				"queryType": "Query",
+				"types": declared_types,
+				"directives": [],
+				"mutationType": null,
+			}],
 			"__Type": types,
 			"__Field": fields,
+			"__EnumValue": enums,
 		})
 	}
 

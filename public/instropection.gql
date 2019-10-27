@@ -1,9 +1,7 @@
 # Schema for instropection
 type __Schema {
+  id: ID!
   types: [__Type!]!
-  """
-  @filter id == "Query";
-  """
   queryType: __Type!
   mutationType: __Type
   subscriptionType: __Type
@@ -11,7 +9,7 @@ type __Schema {
 }
 
 type __Type {
-  id: String!
+  id: ID!
   kind: __TypeKind!
   name: String
   description: String
@@ -21,7 +19,7 @@ type __Type {
   # true { filter(true) }
   # };
   fields(includeDeprecated: Boolean = false): [__Field!]
-  interfaces: [__Type!]
+  interfaces: [__Type!]!
   possibleTypes: [__Type!]
 
   # List of enums
@@ -35,7 +33,7 @@ type __Type {
 }
 
 type __Field {
-  id: String!
+  id: ID!
   name: String!
   description: String
   args: [__InputValue!]!
@@ -45,6 +43,7 @@ type __Field {
 }
 
 type __InputValue {
+  id: ID!
   name: String!
   description: String
   type: __Type!
@@ -52,6 +51,7 @@ type __InputValue {
 }
 
 type __EnumValue {
+  id: ID!
   name: String!
   description: String
   isDeprecated: Boolean!
@@ -70,6 +70,7 @@ enum __TypeKind {
 }
 
 type __Directive {
+  id: ID!
   name: String!
   description: String
   locations: [__DirectiveLocation!]!
