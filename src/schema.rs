@@ -2,7 +2,7 @@ use graphql_parser::parse_schema;
 use graphql_parser::schema::*;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
-use super::utility;
+use super::{utility, parsing};
 
 pub fn get_field_type(t: &Type) -> SchemaFieldReturnType {
 	let mut r = SchemaFieldReturnType {
@@ -144,7 +144,7 @@ pub fn traverse_schema(file: &str) -> SchemaClasses {
 
 pub struct InstropectionParser {
 	pub schema: SchemaClasses,
-	pub database: serde_json::Value,
+	pub database: parsing::DatabaseIndex,
 }
 
 pub fn build_schema_instropection() -> InstropectionParser {
@@ -227,17 +227,16 @@ pub fn build_schema_instropection() -> InstropectionParser {
 	}
 	InstropectionParser {
 		schema: traverse_schema("instropection.gql"),
-		database: json!({
-			"__Schema": [{
+		database: [("__Schema".to_owned(), vec![json!({
 				"id": "__Schema",
 				"queryType": "Query",
 				"types": declared_types,
 				"directives": [],
 				"mutationType": null,
-			}],
-			"__Type": types,
-			"__Field": fields,
-			"__EnumValue": enums,
-		}),
+			})]),
+			("__Type".to_owned(), types),
+			("__Field".to_owned(), fields),
+			("__EnumValue".to_owned(), enums),
+			].iter().cloned().collect()
 	}
 }

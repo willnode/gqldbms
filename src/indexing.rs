@@ -1,4 +1,5 @@
 use super::schema;
+use super::parsing;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -41,12 +42,9 @@ where
 	h
 }
 
-pub fn build_hashmaps(db: &Value, schema: &schema::SchemaClasses) -> DatabaseHashmaps {
+pub fn build_hashmaps(db: &parsing::DatabaseIndex, schema: &schema::SchemaClasses) -> DatabaseHashmaps {
 	let mut hashes: DatabaseHashmaps = HashMap::new();
-	for (name, classes) in match &db {
-		Value::Object(arr) => arr,
-		_ => panic!("Database Root must be an Object!"),
-	} {
+	for (name, classes) in db {
 		if !schema.contains_key(name) {
 			// No indexing needed, 'cause we can't infer exact type this way
 			// Anyway if things doesn't exist in schema, it never be looked up, so don't panic.
@@ -54,10 +52,7 @@ pub fn build_hashmaps(db: &Value, schema: &schema::SchemaClasses) -> DatabaseHas
 		} else {
 			// This type exist in schema. Let's index
 			// WIP: Indexable props should be marked, but now let's just assume it's only ID for now.
-			let arr_classes = match &classes {
-				Value::Array(arr) => arr,
-				_ => panic!("All Database classlist must be an Array!"),
-			};
+			let arr_classes = classes;
 			let (field_name, hash) = (
 				"id".to_owned(),
 				match &schema[name] {

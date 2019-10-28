@@ -5,10 +5,12 @@ use super::{indexing, schema, utility};
 use std::collections::HashMap;
 use std::convert::TryInto;
 
+pub type DatabaseIndex = HashMap<String, Vec<Value>>;
+
 #[derive(Clone)]
 pub struct QueryParser {
 	pub schema: schema::SchemaClasses,
-	pub database: Value,
+	pub database: DatabaseIndex,
 	pub hashmaps: indexing::DatabaseHashmaps,
 }
 
@@ -25,7 +27,7 @@ struct TraverserInfo<'a> {
 	fragments: &'a HashMap<String, FragmentDefinition>,
 }
 
-fn read_database() -> Value {
+fn read_database() -> DatabaseIndex {
 	let data = utility::read_pub_file("data.json");
 	serde_json::from_str(&data).expect("File `public/data.json` is not valid JSON object!")
 }
@@ -46,18 +48,14 @@ impl QueryParser {
 		let mut sch = schema::traverse_schema("schema.gql");
 		let instropection = schema::build_schema_instropection();
 		let mut db = read_database();
-		let dbmut = match db.as_object_mut() {
-			Some(o) => o,
-			_ => panic!("Database must be object!"),
-		};
-		dbmut.extend(instropection.database.as_object().unwrap().clone());
-		dbmut["Query"][0]["id"] = json!("Query");
-		dbmut["Query"][0]["__schema"] = json!("__Schema");
+		db.extend(instropection.database);
+		let mut qdata = db["Query"][0].clone();
+		qdata["id"] = json!("Query");
+		qdata["__schema"] = json!("__Schema");
 		let mut qhash = match &sch["Query"] {
 			schema::SchemaType::Object(o) => o.clone(),
 			_ => panic!(),
 		};
-
 
 		qhash.insert(
 			"id".to_owned(),
@@ -99,10 +97,12 @@ impl QueryParser {
 		);
 		sch.remove("Query");
 		sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash.clone()));
+		db.get_mut("Query").unwrap()[0] = qdata.clone();
 
 		for (key, _) in &sch {
-			match (&sch[key], &dbmut[key]) {
-				(schema::SchemaType::Object(o), Value::Array(arr)) => {
+			let arr = &db[key];
+			match &sch[key] {
+				schema::SchemaType::Object(o) => {
 					let hashes = match &o["id"].data_type.name_type[..] {
 							"string" => json!(indexing::subindex_keys(arr, |value| {
 								value["id"].as_str().unwrap().to_string()
@@ -115,7 +115,7 @@ impl QueryParser {
 							})),
 							_ => panic!("id is not indexable!"),
 						};
-					dbmut["Query"][0][format!("values__of_{}", key)] = hashes;
+					qdata[format!("values__of_{}", key)] = hashes;
 					qhash.insert(
 						format!("values__of_{}", key),
 						schema::SchemaField {
@@ -125,10 +125,10 @@ impl QueryParser {
 								name_type: o["id"].data_type.name_type.clone(),
 								is_array: true,
 								is_unique: false,
-								is_indexed: true,
+								is_indexed: false,
 							},
 							return_type: schema::SchemaFieldReturnType {
-								is_array: false,
+								is_array: true,
 								is_array_non_nullable: false,
 								name_type: format!("{}", key),
 								is_type_non_nullable: true,
@@ -140,11 +140,11 @@ impl QueryParser {
 			}
 		}
 		// Des tak des
-		db = json!(dbmut);
+		db.get_mut("Query").unwrap()[0] = qdata;
 		sch.remove("Query");
 		sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash));
 		sch.extend(instropection.schema);
-
+		println!("{}", json!(db));
 		let hashmap = indexing::build_hashmaps(&db, &sch);
 		QueryParser {
 			schema: sch,
@@ -155,16 +155,13 @@ impl QueryParser {
 	// Given Values, Apply filters to it
 	fn find_match(
 		&self,
-		class_name: &String,
+		class_name: &str,
 		iter: &Vec<Value>,
 		args: &Vec<(String, graphql_parser::query::Value)>,
 	) -> Value {
 		let mut result: Vec<Value> = iter
 			.iter()
-			.map(|x| match &self.database[&class_name] {
-				Value::Array(arr) => arr.iter().find(|y| &y["id"] == x).unwrap().clone(),
-				_ => Value::Null.clone(),
-			})
+			.map(|x| self.database[class_name].iter().find(|y| &y["id"] == x).unwrap().clone())
 			.collect();
 		for (key, val) in args {
 			let val2 = gql2serde_value(val);
@@ -193,10 +190,12 @@ impl QueryParser {
 					// A primitive
 					"String" | "ID" | "Number" | "Float" => id.clone(),
 					// Object in schema
-					n @ _ => match &self.database[&n] {
-						Value::Array(arr) => {
+					n @ _ => {
+							let arr = match self.database.get(&n[..]) {
+								Some(v) => v, _ => {return id.clone();} // Could be an enum
+							};
 							// Unpack object
-							let idkey = match &self.hashmaps[&n[..]] {
+							let idkey = match &self.hashmaps[n] {
 								Some(v) => &v["id"],
 								_ => {
 									panic!();
@@ -212,8 +211,6 @@ impl QueryParser {
 								_ => panic!(),
 							}]
 							.clone()
-						}
-						_ => id.clone(),
 					},
 				}
 			}

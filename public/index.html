@@ -41,7 +41,7 @@
 
 	</div>
 
-	<script src="https://cdn.jsdelivr.net/npm/vue@2.6.0"></script>
+	<script src="https://cdn.jsdelivr.net/npm/vue@2.6.10/dist/vue.js"></script>
 	<script>
 		let data = {
 			types: [],
@@ -54,7 +54,7 @@
 			methods: {
 				fetchForActiveType: function () {
 					const activeTypeName = this.types[this.activeType].name;
-					const activeTypeFields = this.types[this.activeType].fields.map(x => x.name).join(" ");
+					const activeTypeFields = this.types[this.activeType].fields.map(x => x.name + (x.type.kind == "OBJECT" ? " { id } " : "")).join(" ");
 					fetch('/graphql', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
@@ -67,16 +67,97 @@
 		});
 
 		const query = `
-		query InstropectionQuery {
-			__schema {
-				types(kind: "OBJECT") {
-					name
-					fields {
-						name
-					}
-				}
-			}
-		}
+		query IntrospectionQuery {
+      __schema {
+        queryType { name }
+        mutationType { name }
+        subscriptionType { name }
+        types {
+          ...FullType
+        }
+        directives {
+          name
+          description
+          locations
+          args {
+            ...InputValue
+          }
+        }
+      }
+    }
+
+    fragment FullType on __Type {
+      kind
+      name
+      description
+      fields(includeDeprecated: true) {
+        name
+        description
+        args {
+          ...InputValue
+        }
+        type {
+          ...TypeRef
+        }
+        isDeprecated
+        deprecationReason
+      }
+      inputFields {
+        ...InputValue
+      }
+      interfaces {
+        ...TypeRef
+      }
+      enumValues(includeDeprecated: true) {
+        name
+        description
+        isDeprecated
+        deprecationReason
+      }
+      possibleTypes {
+        ...TypeRef
+      }
+    }
+
+    fragment InputValue on __InputValue {
+      name
+      description
+      type { ...TypeRef }
+      defaultValue
+    }
+
+    fragment TypeRef on __Type {
+      kind
+      name
+      ofType {
+        kind
+        name
+        ofType {
+          kind
+          name
+          ofType {
+            kind
+            name
+            ofType {
+              kind
+              name
+              ofType {
+                kind
+                name
+                ofType {
+                  kind
+                  name
+                  ofType {
+                    kind
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 		`
 		fetch('/graphql', {
 			method: 'POST',
