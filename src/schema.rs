@@ -1,9 +1,8 @@
 use graphql_parser::parse_schema;
 use graphql_parser::schema::*;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Read;
 use std::ops::Deref;
+use super::utility;
 
 pub fn get_field_type(t: &Type) -> SchemaFieldReturnType {
 	let mut r = SchemaFieldReturnType {
@@ -81,12 +80,9 @@ pub struct SchemaFieldReturnType {
 pub type SchemaClasses = HashMap<String, SchemaType>;
 pub type SchemaFields = HashMap<String, SchemaField>;
 
-fn schema(file: &str) -> Document {
-	let uri = String::from("public/") + file;
-	let mut file = File::open(uri).expect("Unable to open");
-	let mut data = String::new();
-	file.read_to_string(&mut data).expect("Empty");
-	parse_schema(&data).unwrap()
+fn read_schema(path: &str) -> Document {
+	let data = utility::read_pub_file(path);
+	parse_schema(&data).expect(&format!("File `public/{}` is not valid GraphQL schema!", path)[..])
 }
 
 fn traverse_object(object: &ObjectType) -> SchemaFields {
@@ -118,7 +114,7 @@ pub enum SchemaType {
 }
 
 pub fn traverse_schema(file: &str) -> SchemaClasses {
-	let doc = schema(file);
+	let doc = read_schema(file);
 	let mut hashes = HashMap::new();
 	for def in doc.definitions {
 		match &def {
@@ -155,7 +151,7 @@ pub fn build_schema_instropection() -> InstropectionParser {
 	let mut fields = Vec::new();
 	let mut types = Vec::new();
 	let mut enums = Vec::new();
-	let doc = schema("schema.gql");
+	let doc = read_schema("schema.gql");
 
 	for def in &doc.definitions {
 		match &def {

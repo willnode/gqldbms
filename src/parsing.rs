@@ -1,14 +1,12 @@
 use graphql_parser::query::*;
 use serde_json::Value;
 
-use super::indexing;
-use super::schema;
+use super::{indexing, schema, utility};
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::Read;
 
-struct QueryParser {
+#[derive(Clone)]
+pub struct QueryParser {
 	pub schema: schema::SchemaClasses,
 	pub database: Value,
 	pub hashmaps: indexing::DatabaseHashmaps,
@@ -27,12 +25,9 @@ struct TraverserInfo<'a> {
 	fragments: &'a HashMap<String, FragmentDefinition>,
 }
 
-fn database() -> Value {
-	let uri = String::from("public/data.json");
-	let mut file = File::open(uri).expect("Unable to open");
-	let mut data = String::new();
-	file.read_to_string(&mut data).expect("Empty");
-	serde_json::from_str(&data).unwrap()
+fn read_database() -> Value {
+	let data = utility::read_pub_file("data.json");
+	serde_json::from_str(&data).expect("File `public/data.json` is not valid JSON object!")
 }
 
 fn gql2serde_value(v: &graphql_parser::query::Value) -> Value {
@@ -46,6 +41,72 @@ fn gql2serde_value(v: &graphql_parser::query::Value) -> Value {
 }
 
 impl QueryParser {
+	pub fn new() -> QueryParser {
+		// Load necessary files (should be done before server starts, actually)
+		let mut sch = schema::traverse_schema("schema.gql");
+		let instropection = schema::build_schema_instropection();
+		let mut db = read_database();
+		let dbmut = match db.as_object_mut() {
+			Some(o) => o,
+			_ => panic!("Database must be object!"),
+		};
+		dbmut.extend(instropection.database.as_object().unwrap().clone());
+		dbmut["Query"][0]["id"] = json!("Query");
+		dbmut["Query"][0]["__schema"] = json!("__Schema");
+		db = json!(dbmut);
+		let mut qhash = match &sch["Query"] {
+			schema::SchemaType::Object(o) => o.clone(),
+			_ => panic!(),
+		};
+		qhash.insert(
+			"id".to_owned(),
+			schema::SchemaField {
+				name: "id".to_owned(),
+				description: "".to_owned(),
+				data_type: schema::SchemaFieldDataType {
+					name_type: "string".to_owned(),
+					is_array: false,
+					is_unique: false,
+					is_indexed: true,
+				},
+				return_type: schema::SchemaFieldReturnType {
+					is_array: false,
+					is_array_non_nullable: false,
+					name_type: "ID".to_owned(),
+					is_type_non_nullable: true,
+				},
+			},
+		);
+		qhash.insert(
+			"__schema".to_owned(),
+			schema::SchemaField {
+				name: "__schema".to_owned(),
+				description: "".to_owned(),
+				data_type: schema::SchemaFieldDataType {
+					name_type: "__Schema".to_owned(),
+					is_array: false,
+					is_unique: false,
+					is_indexed: false,
+				},
+				return_type: schema::SchemaFieldReturnType {
+					is_array: false,
+					is_array_non_nullable: false,
+					name_type: "__Schema".to_owned(),
+					is_type_non_nullable: true,
+				},
+			},
+		);
+		sch.remove("Query");
+		sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash));
+		sch.extend(instropection.schema);
+
+		let hashmap = indexing::build_hashmaps(&db, &sch);
+		QueryParser {
+			schema: sch,
+			database: db,
+			hashmaps: hashmap,
+		}
+	}
 	// Given Values, Apply filters to it
 	fn find_match(
 		&self,
@@ -114,7 +175,7 @@ impl QueryParser {
 		}
 	}
 
-	pub fn resolve_field(
+	fn resolve_field(
 		&self,
 		parent: &Value,
 		args: &Vec<(String, graphql_parser::query::Value)>,
@@ -145,7 +206,7 @@ impl QueryParser {
 		)
 	}
 
-	pub fn traverse_selection(
+	fn traverse_selection(
 		&self,
 		parent: &Value,
 		context: &SelectionSet,
@@ -230,112 +291,48 @@ impl QueryParser {
 			}
 		}
 	}
-}
 
-pub fn traverse_query(ast: &Document) -> Value {
-	// Load necessary files (should be done before server starts, actually)
-	let mut sch = schema::traverse_schema("schema.gql");
-	let instropection = schema::build_schema_instropection();
-	let mut db = database();
-	let dbmut = match db.as_object_mut() {
-		Some(o) => o,
-		_ => panic!("Database must be object!"),
-	};
-	dbmut.extend(instropection.database.as_object().unwrap().clone());
-	dbmut["Query"][0]["id"] = json!("Query");
-	dbmut["Query"][0]["__schema"] = json!("__Schema");
-	db = json!(dbmut);
-	let mut qhash = match &sch["Query"] {
-		schema::SchemaType::Object(o) => o.clone(),
-		_ => panic!(),
-	};
-	qhash.insert(
-		"id".to_owned(),
-		schema::SchemaField {
-			name: "id".to_owned(),
-			description: "".to_owned(),
-			data_type: schema::SchemaFieldDataType {
-				name_type: "string".to_owned(),
-				is_array: false,
-				is_unique: false,
-				is_indexed: true,
-			},
-			return_type: schema::SchemaFieldReturnType {
-				is_array: false,
-				is_array_non_nullable: false,
-				name_type: "ID".to_owned(),
-				is_type_non_nullable: true,
-			},
-		},
-	);
-	qhash.insert(
-		"__schema".to_owned(),
-		schema::SchemaField {
-			name: "__schema".to_owned(),
-			description: "".to_owned(),
-			data_type: schema::SchemaFieldDataType {
-				name_type: "__Schema".to_owned(),
-				is_array: false,
-				is_unique: false,
-				is_indexed: false,
-			},
-			return_type: schema::SchemaFieldReturnType {
-				is_array: false,
-				is_array_non_nullable: false,
-				name_type: "__Schema".to_owned(),
-				is_type_non_nullable: true,
-			},
-		},
-	);
-	sch.remove("Query");
-	sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash));
-	sch.extend(instropection.schema);
-
-	let hashmap = indexing::build_hashmaps(&db, &sch);
-	let worker = QueryParser {
-		schema: sch,
-		database: db,
-		hashmaps: hashmap,
-	};
-	let mut fragments = HashMap::new();
-	// Look for fragments before doing actual operation
-	for def in &ast.definitions {
-		match &def {
-			Definition::Fragment(fragdef) => {
-				fragments.insert(fragdef.name.clone(), fragdef.clone());
+	pub fn traverse_query(&self, ast: &Document) -> Value {
+		let mut fragments = HashMap::new();
+		// Look for fragments before doing actual operation
+		for def in &ast.definitions {
+			match &def {
+				Definition::Fragment(fragdef) => {
+					fragments.insert(fragdef.name.clone(), fragdef.clone());
+				}
+				_ => {}
 			}
-			_ => {}
 		}
-	}
-	// Start action
-	for def in &ast.definitions {
-		match &def {
-			Definition::Operation(opdef) => match &opdef {
-				OperationDefinition::Query(query) => {
-					return worker.traverse_selection(
-						&worker.database["Query"][0],
-						&query.selection_set,
-						TraverserInfo {
-							class_name: "Query",
-							fragments: &fragments,
-						},
-					);
-				}
-				OperationDefinition::SelectionSet(sel) => {
-					return worker.traverse_selection(
-						&worker.database["Query"][0],
-						&sel,
-						TraverserInfo {
-							class_name: "Query",
-							fragments: &fragments,
-						},
-					);
-				}
+		// Start action
+		for def in &ast.definitions {
+			match &def {
+				Definition::Operation(opdef) => match &opdef {
+					OperationDefinition::Query(query) => {
+						return self.traverse_selection(
+							&self.database["Query"][0],
+							&query.selection_set,
+							TraverserInfo {
+								class_name: "Query",
+								fragments: &fragments,
+							},
+						);
+					}
+					OperationDefinition::SelectionSet(sel) => {
+						return self.traverse_selection(
+							&self.database["Query"][0],
+							&sel,
+							TraverserInfo {
+								class_name: "Query",
+								fragments: &fragments,
+							},
+						);
+					}
 
-				_ => return json!("Other op"),
-			},
-			_ => return json!("Other def"),
+					_ => return json!("Other op"),
+				},
+				_ => return json!("Other def"),
+			}
 		}
+		return json!("");
 	}
-	return json!("");
 }

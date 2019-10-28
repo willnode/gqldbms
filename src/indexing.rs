@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
+#[derive(Clone)]
 pub enum FieldHashmaps {
 	String(HashMap<String, usize>),
 	Boolean(HashMap<bool, usize>),
