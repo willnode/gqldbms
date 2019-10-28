@@ -144,7 +144,6 @@ impl QueryParser {
 		sch.remove("Query");
 		sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash));
 		sch.extend(instropection.schema);
-		println!("{}", json!(db));
 		let hashmap = indexing::build_hashmaps(&db, &sch);
 		QueryParser {
 			schema: sch,
