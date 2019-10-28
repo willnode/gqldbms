@@ -16,7 +16,20 @@ pub enum FieldHashmaps {
 // Valid for database lifetimes
 pub type DatabaseHashmaps = HashMap<String, Option<HashMap<String, FieldHashmaps>>>;
 
-fn subindex_hashmaps<T, F>(classes: &Vec<Value>, converter: F) -> HashMap<T, usize>
+
+pub fn subindex_keys<T, F>(classes: &Vec<Value>, converter: F) -> Vec<T>
+where
+	F: Fn(&Value) -> T,
+	T: std::hash::Hash + Eq,
+{
+	let mut h = Vec::new();
+	for value in classes {
+		h.push(converter(&value));
+	}
+	h
+}
+
+pub fn subindex_hashmaps<T, F>(classes: &Vec<Value>, converter: F) -> HashMap<T, usize>
 where
 	F: Fn(&Value) -> T,
 	T: std::hash::Hash + Eq,

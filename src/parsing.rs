@@ -53,11 +53,12 @@ impl QueryParser {
 		dbmut.extend(instropection.database.as_object().unwrap().clone());
 		dbmut["Query"][0]["id"] = json!("Query");
 		dbmut["Query"][0]["__schema"] = json!("__Schema");
-		db = json!(dbmut);
 		let mut qhash = match &sch["Query"] {
 			schema::SchemaType::Object(o) => o.clone(),
 			_ => panic!(),
 		};
+
+
 		qhash.insert(
 			"id".to_owned(),
 			schema::SchemaField {
@@ -96,6 +97,50 @@ impl QueryParser {
 				},
 			},
 		);
+		sch.remove("Query");
+		sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash.clone()));
+
+		for (key, _) in &sch {
+			match (&sch[key], &dbmut[key]) {
+				(schema::SchemaType::Object(o), Value::Array(arr)) => {
+					let hashes = match &o["id"].data_type.name_type[..] {
+							"string" => json!(indexing::subindex_keys(arr, |value| {
+								value["id"].as_str().unwrap().to_string()
+							})),
+							"i32" => json!(indexing::subindex_keys(arr, |value| {
+								value["id"].as_i64().unwrap() as i32
+							})),
+							"u64" => json!(indexing::subindex_keys(arr, |value| {
+								value["id"].as_u64().unwrap()
+							})),
+							_ => panic!("id is not indexable!"),
+						};
+					dbmut["Query"][0][format!("values__of_{}", key)] = hashes;
+					qhash.insert(
+						format!("values__of_{}", key),
+						schema::SchemaField {
+							name: format!("values__of_{}", key),
+							description: "".to_owned(),
+							data_type: schema::SchemaFieldDataType {
+								name_type: o["id"].data_type.name_type.clone(),
+								is_array: true,
+								is_unique: false,
+								is_indexed: true,
+							},
+							return_type: schema::SchemaFieldReturnType {
+								is_array: false,
+								is_array_non_nullable: false,
+								name_type: format!("{}", key),
+								is_type_non_nullable: true,
+							},
+						},
+					);
+				}
+				_ => {}
+			}
+		}
+		// Des tak des
+		db = json!(dbmut);
 		sch.remove("Query");
 		sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash));
 		sch.extend(instropection.schema);

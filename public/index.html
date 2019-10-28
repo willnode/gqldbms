@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<title>GQLDBMS</title>
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+</head>
+<body>
+	<div id="app">
+		<h1>GQLDBMS</h1>
+		<a class="btn btn-sm btn-outline-primary pb-2" href="/graphiql">GraphiQL</a>
+		<div class="row p-2">
+			<div class="col-md-3">
+				<div class="list-group list-group-hover">
+					<button class="list-group-item list-group-item-action"
+						:class="{ active: i == activeType }" v-for="(t, i) in types"
+						@click="activeType = i; fetchForActiveType()">
+						{{ t.name }}
+					</button>
+				</div>
+			</div>
+			<div class="col-md-9">
+				<table class="table table-sm table-hover" v-if="activeType >= 0">
+					<thead>
+						<tr>
+							<th v-for="f in types[activeType].fields">
+								{{ f.name }}
+							</th>
+						</tr>
+					</thead>
+					<tbody v-if="records[types[activeType].name]">
+						<tr v-for="r in records[types[activeType].name]">
+							<td v-for="f in types[activeType].fields"> {{ r[f.name] }} </td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+	</div>
+
+	<script src="https://cdn.jsdelivr.net/npm/vue@2.6.0"></script>
+	<script>
+		let data = {
+			types: [],
+			records: {},
+			activeType: -1,
+		};
+		new Vue({
+			el: '#app',
+			data: data,
+			methods: {
+				fetchForActiveType: function () {
+					const activeTypeName = this.types[this.activeType].name;
+					const activeTypeFields = this.types[this.activeType].fields.map(x => x.name).join(" ");
+					fetch('/graphql', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ query: `{ values__of_${activeTypeName} { ${activeTypeFields} } }` }),
+					})
+					.then(res => res.json())
+					.then(res => this.$set(this.records, activeTypeName, res.data["values__of_"+activeTypeName]));
+				}
+			}
+		});
+
+		const query = `
+		query InstropectionQuery {
+			__schema {
+				types(kind: "OBJECT") {
+					name
+					fields {
+						name
+					}
+				}
+			}
+		}
+		`
+		fetch('/graphql', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ query: query }),
+		})
+			.then(res => res.json())
+			.then(res => data.types = res.data.__schema.types);
+	</script>
+</body>
+</html>

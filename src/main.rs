@@ -24,7 +24,7 @@ struct App {
 }
 impl App {
     pub fn new() -> App {
-        let files = vec!["graphiql.html", "instropection.gql", "schema.gql"];
+        let files = vec!["graphiql.html", "instropection.gql", "schema.gql", "index.html"];
         let mut filess = HashMap::new();
         for file in files {
             filess.insert(file.to_owned(), utility::read_pub_file(&file));
@@ -88,6 +88,7 @@ impl App {
         match (req.method(), req.uri().path()) {
             (&Method::POST, "/graphql") => self.graphql_api(req),
             (&Method::GET, "/graphiql") => self.serve_static("graphiql.html", "text/html"),
+            (&Method::GET, "/") => self.serve_static("index.html", "text/html"),
             _ => Box::new(future::ok(
                 Response::builder()
                     .status(StatusCode::NOT_FOUND)
