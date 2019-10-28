@@ -1,18 +1,308 @@
 type Query {
-  author(id: ID!): User!
-  feed: [Post!]!
+  allFilms: [Film!]!
+  allPersons: [Person!]!
+  allPlanets: [Planet!]!
+  allSpecies: [Species!]!
+  allStarships: [Starship!]!
+  allVehicles: [Vehicle!]!
 }
 
-type User {
-  " @type as i32; "
+type Film {
+  characters: [Person!]
+  createdAt: String! # D
+  """ The name of the director of this film. """
+  director: String
+  """ The episode number of this film. """
+  episodeId: Int!
+  """ @type as i32; """
   id: ID!
-  username: String!
-  posts: [Post!]!
-}
-
-type Post {
-  " @type as i32; "
-  id: ID!
+  # indicates if the record is published
+  # isPublished: Boolean!
+  """ The opening paragraphs at the beginning of this film. """
+  openingCrawl: String
+  planets: [Planet!]
+  """ The names of the producers of this film. """
+  producers: [String!]
+  """  The ISO 8601 date format of film release at original creator country. """
+  releaseDate: String # D
+  species: [Species!]
+  starships: [Starship!]
+  """ The title of this film """
   title: String!
-  author: User!
+  updatedAt: String! # D
+  vehicles: [Vehicle!]
+}
+
+type Person {
+  """ The birth year of the person, using the in-universe standard of BBY or ABY - 
+      Before the Battle of Yavin or After the Battle of Yavin. The Battle of Yavin 
+      is a battle that occurs at the end of Star Wars episode IV: A New Hope. """
+  birthYear: String
+  createdAt: String! # D
+  """ The eye color of this person. Will be "UNKNOWN" if not known or null if the person does not have an eye. """
+  eyeColor: [PERSON_EYE_COLOR!]
+  films: [Film!]
+  """  The gender of this person. Will be "UNKNOWN" if not known or null if the person does not have a gender. """
+  gender: PERSON_GENDER
+  """ The hair color of this person. Will be "UNKNOWN" if not known or null if the person does not have hair. """
+  hairColor: [PERSON_HAIR_COLOR!]
+  """ The height of the person in centimeters. """
+  height: Int
+  homeworld(filter: PlanetFilter): Planet
+  """ @type as i32; """
+  id: ID!
+  # indicates if the record is published
+  # isPublished: Boolean!
+  """ The mass of the person in kilograms. """
+  mass: Float
+  """ The name of this person. """
+  name: String!
+  """ The skin color of this person. """
+  skinColor: [PERSON_SKIN_COLOR!]
+  species: [Species!]
+  starships: [Starship!]
+  updatedAt: String! # D
+  vehicles: [Vehicle!]
+}
+
+""" The eye color of this person. Will be "UNKNOWN" if not known or null if the person does not have an eye. """
+enum PERSON_EYE_COLOR {
+  UNKNOWN
+  BLUE
+  YELLOW
+  RED
+  BROWN
+  BLUEGREY
+  BLACK
+  ORANGE
+  HAZEL
+  PINK
+  GOLD
+  GREEN
+  WHITE
+  DARK
+}
+
+"""  The gender of this person. Will be "UNKNOWN" if not known or null if the person does not have a gender. """
+enum PERSON_GENDER {
+  UNKNOWN
+  MALE
+  FEMALE
+  HERMAPHRODITE
+}
+
+""" The hair color of this person. Will be "UNKNOWN" if not known or null if the person does not have hair. """
+enum PERSON_HAIR_COLOR {
+  AUBURN
+  BLACK
+  BLONDE
+  BROWN
+  GREY
+  UNKNOWN
+  WHITE
+}
+
+""" The skin color of this person. """
+enum PERSON_SKIN_COLOR {
+  UNKNOWN
+  FAIR
+  GOLD
+  WHITE
+  LIGHT
+  GREEN
+  GREENTAN
+  PALE
+  METAL
+  DARK
+  BROWNMOTTLE
+  BROWN
+  GREY
+  MOTTLEDGREEN
+  ORANGE
+  BLUE
+  RED
+  YELLOW
+  TAN
+  SILVER
+}
+
+""" A Planet is a large mass, planet or planetoid in the Star Wars Universe, at the time of 0 ABY. """
+type Planet {
+  """ The climate of this planet. """
+  climate: [String!]
+  createdAt: String! # D
+  """ The diameter of this planet in kilometers. """
+  diameter: Int
+  films: [Film!]
+  """ A number denoting the gravity of this planet, where "1" is normal or 1 
+      standard G. "2" is twice or 2 standard Gs. "0.5" is half or 0.5 standard Gs. """
+  gravity: String
+  """ @type as i32; """
+  id: ID!
+  # indicates if the record is published
+  # isPublished: Boolean!
+  """ The name of the planet """
+  name: String!
+  """ The number of standard days it takes for this planet to complete a single orbit of its local star. """
+  orbitalPeriod: Int
+  """ The average population of sentient beings inhabiting this planet. """
+  population: Float
+  residents: [Person!]
+  """ The number of standard hours it takes for this planet to complete a single rotation on its axis. """
+  rotationPeriod: Int
+  """ The percentage of the planet surface that is naturally occurring water or bodies of water. """
+  surfaceWater: Float
+  """ The terrain of this planet. """
+  terrain: [String!]
+  updatedAt: String! # D
+}
+
+""" A Species is a type of person or character within the Star Wars Universe. """
+type Species {
+  """ The average height of this species in centimeters. """
+  averageHeight: Int
+  """ The average lifespan of this species in years. """
+  averageLifespan: Int
+  """ The classification of this species, such as "mammal" or "reptile". """
+  classification: String
+  createdAt: String! # D
+  """ The designation of this species, such as "sentient". """
+  designation: String
+  """ The eye colors for this species, "UNKNOWN" if not known, null if this species does not typically have eyes. """
+  eyeColor: [SPECIES_EYE_COLOR!]
+  films: [Film!]
+  """ The hair colors for this species, "UNKNOWN" if not known, null if this species does not typically have hairs. """
+  hairColor: [SPECIES_HAIR_COLOR!]
+  """ @type as i32; """
+  id: ID!
+  # indicates if the record is published
+  # isPublished: Boolean!
+  """ The language commonly spoken by this species. """
+  language: String
+  """ The name of this species. """
+  name: String!
+  people: [Person!]
+  """ The skin colors for this species, "UNKNOWN" if not known, null if this species does not typically have a skin. """
+  skinColor: [SPECIES_SKIN_COLOR!]
+  updatedAt: String! # D
+}
+
+""" The eye colors for this species, "UNKNOWN" if not known, null if this species does not typically have eyes. """
+enum SPECIES_EYE_COLOR {
+  AMBER
+  BLACK
+  BLUE
+  BROWN
+  GOLD
+  GREEN
+  GREY
+  HAZEL
+  INDIGO
+  ORANGE
+  PINK
+  RED
+  SILVER
+  UNKNOWN
+  YELLOW
+  GOLDEN
+}
+
+
+""" The hair colors for this species, "UNKNOWN" if not known, null if this species does not typically have hairs. """
+enum SPECIES_HAIR_COLOR {
+  UNKNOWN
+  BROWN
+  WHITE
+  RED
+  BLACK
+  BLONDE
+}
+
+""" The skin colors for this species, "UNKNOWN" if not known, null if this species does not typically have a skin. """
+enum SPECIES_SKIN_COLOR {
+  BLUE
+  BROWN
+  CAUCASIAN
+  DARK
+  GREEN
+  GREY
+  MAGENTA
+  ORANGE
+  PALE
+  PALEPINK
+  PEACH
+  PINK
+  PURPLE
+  RED
+  TAN
+  UNKNOWN
+  WHITE
+  YELLOW
+  BLACK
+  ASIAN
+  HISPANIC
+}
+
+
+""" A Starship is a single transport craft that has hyperdrive capability. """
+type Starship {
+  """ The class of this starships hyperdrive. """
+  hyperdriveRating: Float
+  """ @type as i32; """
+  id: ID!
+  # indicates if the record is published
+  # isPublished: Boolean!
+  """ The manufacturer of this starship. """
+  manufacturer: [String!]
+  """  The maximum speed of this starship in the atmosphere. null if this starship is incapable of atmospheric flight. """
+  maxAtmospheringSpeed: Int
+  """ The Maximum number of Megalights this starship can travel in a standard hour. 
+      A "Megalight" is a standard unit of distance and has never been defined before 
+      within the Star Wars universe. """
+  mglt: Int
+  transport: Transport!
+  starshipClass: String!
+}
+
+
+""" A Vehicle or A starship characteristics """
+type Transport {
+  """ The maximum number of kilograms that this vehicle can transport. """
+  cargoCapacity: Int
+  """  The class of this vehicle, such as "Wheeled" or "Repulsorcraft". """
+  class: String
+  """ The maximum length of time that this vehicle can provide consumables for its entire crew without having to resupply. """
+  consumables: String
+  """ The cost of this vehicle new, in Galactic Credits. """
+  costInCredits: Int
+  createdAt: String! # D
+  """ The number of personnel needed to run or pilot this vehicle. """
+  crew: Int
+  #films: [Film!]
+  """ @type as i32; """
+  id: ID!
+  # indicates if the record is published
+  # isPublished: Boolean!
+  """  The length of this vehicle in meters. """
+  length: Float
+  """ The manufacturer of this vehicle. """
+  manufacturer: [String!]
+  """ The maximum speed of this vehicle in the atmosphere. """
+  maxAtmospheringSpeed: Int
+  """ The model or official name of this vehicle. Such as "All-Terrain Attack Transport". """
+  model: String
+  """ The name of this vehicle. The common name, such as "Sand Crawler" or "Speeder bike". """
+  name: String!
+  """ The number of non-essential people this vehicle can transport. """
+  passengers: Int
+  updatedAt: String! # D
+}
+
+""" A Vehicle is a single transport craft that does not have hyperdrive capability. """
+type Vehicle  {
+  """ @type as i32; """
+  id: ID!
+  pilots: [Person!]
+  vehicleClass: String!
+  transport: Transport!
 }

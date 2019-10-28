@@ -3,7 +3,6 @@ use serde_json::Value;
 
 use super::{indexing, schema, utility};
 use std::collections::HashMap;
-use std::convert::TryInto;
 
 pub type DatabaseIndex = HashMap<String, Vec<Value>>;
 
@@ -99,8 +98,10 @@ impl QueryParser {
 		sch.insert("Query".to_owned(), schema::SchemaType::Object(qhash.clone()));
 		db.get_mut("Query").unwrap()[0] = qdata.clone();
 
-		for (key, _) in &sch {
-			let arr = &db[key];
+		for (key, v) in &sch {
+			match v { schema::SchemaType::Enum(_) => { continue; }, _ => {} };
+
+			let arr = &db.get(key).expect(&format!("`{}` class is not found on schema", key)[..]);
 			match &sch[key] {
 				schema::SchemaType::Object(o) => {
 					let hashes = match &o["id"].data_type.name_type[..] {
@@ -187,7 +188,7 @@ impl QueryParser {
 			x => {
 				match &class_name[..] {
 					// A primitive
-					"String" | "ID" | "Number" | "Float" => id.clone(),
+					"String" | "ID" | "Number" | "Float" | "Int" => id.clone(),
 					// Object in schema
 					n @ _ => {
 							let arr = match self.database.get(&n[..]) {
@@ -201,15 +202,24 @@ impl QueryParser {
 								}
 							};
 
-							arr[match &idkey {
-								indexing::FieldHashmaps::String(h) => h[&x.as_str().unwrap()[..]],
+							let keyy = match &idkey {
+								indexing::FieldHashmaps::String(h) =>
+									match x.as_str() { Some(v) => match h.get(v) {
+										Some(v) => Some(v), _ => None,
+									}, _ => None },
 								indexing::FieldHashmaps::I32(h) => {
-									h[&x.as_i64().unwrap().try_into().unwrap()]
+									Some(&h[&(x.as_i64().unwrap() as i32)])
 								}
-								indexing::FieldHashmaps::U64(h) => h[&x.as_u64().unwrap()],
+								indexing::FieldHashmaps::U64(h) => {
+									Some(&h[&(x.as_u64().unwrap())])
+								},
 								_ => panic!(),
-							}]
-							.clone()
+							};
+							match keyy {
+								Some(v) => arr[*v].clone(),
+								_ => Value::Null,
+							}
+
 					},
 				}
 			}
@@ -265,7 +275,7 @@ impl QueryParser {
 			}
 			_ => {
 				match &info.class_name[..] {
-					"String" | "ID" | "Number" | "Float" => parent.clone(),
+					"String" | "ID" | "Number" | "Float" | "Int" => parent.clone(),
 					_ => {
 						let sch = match self.schema.get(&info.class_name[..]) {
 							Some(v) => v,
