@@ -34,8 +34,8 @@ type Film {
 }
 
 type Person {
-  """ The birth year of the person, using the in-universe standard of BBY or ABY - 
-      Before the Battle of Yavin or After the Battle of Yavin. The Battle of Yavin 
+  """ The birth year of the person, using the in-universe standard of BBY or ABY -
+      Before the Battle of Yavin or After the Battle of Yavin. The Battle of Yavin
       is a battle that occurs at the end of Star Wars episode IV: A New Hope. """
   birthYear: String
   createdAt: String! # D
@@ -134,7 +134,7 @@ type Planet {
   """ The diameter of this planet in kilometers. """
   diameter: Int
   films: [Film!]
-  """ A number denoting the gravity of this planet, where "1" is normal or 1 
+  """ A number denoting the gravity of this planet, where "1" is normal or 1
       standard G. "2" is twice or 2 standard Gs. "0.5" is half or 0.5 standard Gs. """
   gravity: String
   """ @type as i32; """
@@ -254,10 +254,8 @@ type Starship {
   # isPublished: Boolean!
   """ The manufacturer of this starship. """
   manufacturer: [String!]
-  """  The maximum speed of this starship in the atmosphere. null if this starship is incapable of atmospheric flight. """
-  maxAtmospheringSpeed: Int
-  """ The Maximum number of Megalights this starship can travel in a standard hour. 
-      A "Megalight" is a standard unit of distance and has never been defined before 
+  """ The Maximum number of Megalights this starship can travel in a standard hour.
+      A "Megalight" is a standard unit of distance and has never been defined before
       within the Star Wars universe. """
   mglt: Int
   transport: Transport!

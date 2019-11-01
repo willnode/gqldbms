@@ -1,78 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta http-equiv="X-UA-Compatible" content="ie=edge">
-	<title>GQLDBMS</title>
-	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>GQLDBMS</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+  <style>
+    .navbar { height: calc(64px - 0.5em); margin-bottom: 0.5em; }
+    #app, #app > div > div { height: calc(100vh - 64px); }
+    #app > div > div { overflow: auto; padding-bottom: 1em; }
+  </style>
 </head>
+
 <body>
-	<div id="app">
-		<h1>GQLDBMS</h1>
-		<a class="btn btn-sm btn-outline-primary pb-2" href="/graphiql">GraphiQL</a>
-		<div class="row p-2">
-			<div class="col-md-3">
-				<div class="list-group list-group-hover">
-					<button class="list-group-item list-group-item-action"
-						:class="{ active: i == activeType }" v-for="(t, i) in types"
-						@click="activeType = i; fetchForActiveType()">
-						{{ t.name }}
-					</button>
-				</div>
-			</div>
-			<div class="col-md-9">
-				<table class="table table-sm table-hover" v-if="activeType >= 0">
-					<thead>
-						<tr>
-							<th v-for="f in types[activeType].fields">
-								{{ f.name }}
-							</th>
-						</tr>
-					</thead>
-					<tbody v-if="records[types[activeType].name]">
-						<tr v-for="r in records[types[activeType].name]">
-							<td v-for="f in types[activeType].fields"> {{ r[f.name] }} </td>
-						</tr>
-					</tbody>
-				</table>
-			</div>
-		</div>
+  <div class="navbar bg-light">
+      <h1 class="navbar-brand">GQLDBMS</h1>
+  </div>
+  <div id="app">
+    <div class="row m-0">
+      <div class="col-md-3">
+        <a class="btn btn-sm btn-outline-primary mb-2" target="_blank" :href="'/graphiql?db='+db">GraphiQL</a>
+        <!-- Table lists -->
+        <div class="list-group list-group-hover">
+          <button class="list-group-item list-group-item-action" :class="{ active: i == activeType }"
+            v-for="(t, i) in types" @click="activeType = i; fetchForActiveType()">
+            {{ t.name }}
+          </button>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="btn-group dropright" v-if="activeType >= 0">
+          <label for="dropColSelection" type="button" class="btn btn-sm btn-secondary dropdown-toggle">
+            Items
+          </label>
+          <input type="checkbox" id="dropColSelection" v-model="dropColSelection" class="d-none">
+          <div class="dropdown-menu dropdown-menu-right" :class="{ show: dropColSelection }">
+            <label class="dropdown-item" :class="{active: activeColumns[f.name]}" v-for="f in types[activeType].fields">
+              <input type="checkbox" v-model="activeColumns[f.name]"> {{ f.name }}
+            </label>
+          </div>
+        </div>
+        <div class="list-group" v-if="activeType >= 0 && records[types[activeType].name]">
+          <button class="list-group-item" v-for="r, ri in records[types[activeType].name]" @click="activeField = ri"
+            :class="{ active: activeField == ri}">
+            {{ r.id }}
+          </button>
+        </div>
+      </div>
+      <div class="col-md-6" v-if="activeType >= 0 && records[types[activeType].name] && activeField >= 0">
+        <div class="list-group">
+          <div class="list-group-item" v-for="f in types[activeType].fields">
+            <div class="d-flex align-items-center" v-for="fe in [records[types[activeType].name][activeField][f.name]]">
+              <div class="mr-2">{{f.name}}: </div>
+              <div class="list-group list-group-horizontal overflow-hidden" v-if="Array.isArray(fe)">
+                <div class="list-group-item py-0" v-for="fee in fe">{{ fee.id }}</div>
+              </div>
+              <span v-else-if="fe === null"><i class="text-muted">null</i></span>
+              <span v-else-if="typeof fe === 'object'">
+                <div class="btn btn-outline-secondary py-0">{{ fe.id }}</div>
+              </span>
+              <pre class="my-auto text-truncate" v-else>{{fe}}</pre>
 
-	</div>
+            </div>
 
-	<script src="https://cdn.jsdelivr.net/npm/vue@2.6.10/dist/vue.js"></script>
-	<script>
-		let data = {
-			types: [],
-			records: {},
-			activeType: -1,
-		};
-		new Vue({
-			el: '#app',
-			data: data,
-			methods: {
-				fetchForActiveType: function () {
-					const activeTypeName = this.types[this.activeType].name;
-					const activeTypeFields = this.types[this.activeType].fields.map(x => x.name + (x.type.kind == "OBJECT" ? " { id } " : "")).join(" ");
-					fetch('/graphql', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ query: `{ values__of_${activeTypeName} { ${activeTypeFields} } }` }),
-					})
-					.then(res => res.json())
-					.then(res => this.$set(this.records, activeTypeName, res.data["values__of_"+activeTypeName]));
-				}
-			}
-		});
+          </div>
+        </div>
+      </div>
+    </div>
 
-		const query = `
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.6.10/dist/vue.js"></script>
+  <script>
+    let data = {
+      db: new URL(window.location.href).searchParams.get("db"),
+      types: [],
+      records: {},
+      activeType: -1,
+      activeField: 0,
+      activeColumns: {},
+      dropColSelection: false,
+    };
+    new Vue({
+      el: '#app',
+      data: data,
+      methods: {
+        fetchForActiveType: function () {
+          const activeTypeName = this.types[this.activeType].name;
+          const activeTypeFields = this.types[this.activeType].fields.map(x => x.name + (x.type.kind == "OBJECT" ?
+            " { id } " : "")).join(" ");
+          fetch('/graphql?db='+this.db, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                query: `{ values__of_${activeTypeName} { ${activeTypeFields} } }`
+              }),
+            })
+            .then(res => res.json())
+            .then(res => this.$set(this.records, activeTypeName, res.data["values__of_" + activeTypeName]));
+        }
+      }
+    });
+
+    const query = `
 		query IntrospectionQuery {
       __schema {
         queryType { name }
         mutationType { name }
         subscriptionType { name }
-        types {
+        types(kind: "OBJECT") {
           ...FullType
         }
         directives {
@@ -159,13 +199,18 @@
       }
     }
 		`
-		fetch('/graphql', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ query: query }),
-		})
-			.then(res => res.json())
-			.then(res => data.types = res.data.__schema.types);
-	</script>
+    fetch('/graphql?db='+data.db, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query: query
+        }),
+      })
+      .then(res => res.json())
+      .then(res => data.types = res.data.__schema.types);
+  </script>
 </body>
+
 </html>

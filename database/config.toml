@@ -1,0 +1,15 @@
+[config]
+instropection = "instropection.gql"
+canonical = "canonical.gql"
+
+[[database]]
+name = "swapi"
+data = "data.json"
+schema = "schema.gql"
+format = "json"
+
+[[database]]
+name = "posts"
+data = "data.json"
+schema = "schema.gql"
+format = "json"

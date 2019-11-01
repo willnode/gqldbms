@@ -16,28 +16,53 @@ type ResponseFuture = Box<dyn Future<Item = Response<Body>, Error = GenericError
 
 use graphql_parser::parse_query;
 use serde_json::Value;
+extern crate serde;
+use serde_derive::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Config {
+    pub config: ConfigConfig,
+    pub database: Vec<ConfigDatabase>,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigConfig {
+    pub instropection: String,
+    pub canonical: String,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigDatabase {
+    pub name: String,
+}
 
 #[derive(Clone)]
 struct App {
-    parser: parsing::QueryParser,
+    parser: HashMap<String, parsing::QueryParser>,
     statics: HashMap<String, String>,
 }
 impl App {
     pub fn new() -> App {
-        let files = vec!["graphiql.html", "instropection.gql", "schema.gql", "index.html"];
+        let files = vec!["graphiql.html", "index.html"];
         let mut filess = HashMap::new();
         for file in files {
             filess.insert(file.to_owned(), utility::read_pub_file(&file));
         }
+        let config : Config = toml::from_str(&utility::read_db_file("config.toml")[..]).expect("config.toml is not valid!");
+
+        let dbs =  config.database.iter().map(|db| (db.name.clone(), parsing::QueryParser::new(&db.name[..]))).collect::<HashMap<String, parsing::QueryParser>>();
         App {
-            parser: parsing::QueryParser::new(),
+            parser: dbs,
             statics: filess,
         }
     }
 
     fn graphql_api(&self, req: Request<Body>) -> ResponseFuture {
         // A web api to run against
-        let parser = self.parser.clone();
+        let urlpa = url::Url::parse("https://example.com").unwrap().join(&req.uri().to_string()).unwrap();
+        let mut db = urlpa.query_pairs();
+        let dbb = db.find(|(k,_)| k=="db").unwrap_or((std::borrow::Cow::Borrowed("db"),std::borrow::Cow::Borrowed( ""))).1;
+        let parser = self.parser[&dbb[..]].clone();
         Box::new(
             req.into_body()
                 .concat2() // Concatenate all chunks in the body
@@ -47,14 +72,19 @@ impl App {
                     let parser = parser;
                     let str = String::from_utf8(entire_body.to_vec())?;
                     let data: serde_json::Value = serde_json::from_str(&str)?;
-                    let mut json = String::new();
-                    match &data["query"] {
-                        Value::String(query) => json.push_str(&query),
-                        _ => json.push_str("{}"),
+                    let query = match &data["query"] {
+                        Value::String(query) => query,
+                        _ => "{}",
                     };
-                    match parse_query(&json) {
+                    let freee = serde_json::Map::default();
+                    let vars = match &data["variables"] {
+                        Value::Object(query) => query,
+                        _ => &freee,
+                    };
+
+                    match parse_query(&query) {
                         Ok(v) => {
-                            let values = parser.traverse_query(&v);
+                            let values = parser.traverse_query(&v, &vars);
                             let data = json!({ "data": values });
                             Ok(Response::builder()
                                 .status(StatusCode::OK)

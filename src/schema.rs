@@ -1,8 +1,8 @@
+use super::{parsing, utility};
 use graphql_parser::parse_schema;
 use graphql_parser::schema::*;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
-use super::{utility, parsing};
 
 pub fn get_field_type(t: &Type) -> SchemaFieldReturnType {
 	let mut r = SchemaFieldReturnType {
@@ -61,6 +61,23 @@ pub struct SchemaField {
 	pub return_type: SchemaFieldReturnType,
 }
 
+impl SchemaField {
+	pub fn new(name: &str, data_type: &str, array: bool) -> SchemaField {
+		let rtype = SchemaFieldReturnType {
+			is_array: array,
+			is_array_non_nullable: true,
+			name_type: data_type.to_owned(),
+			is_type_non_nullable: name == "id",
+		};
+		SchemaField {
+			name: name.to_owned(),
+			description: "".to_owned(),
+			data_type: get_data_type(&rtype, ""),
+			return_type: rtype,
+		}
+	}
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SchemaFieldDataType {
 	pub name_type: String,
@@ -81,8 +98,9 @@ pub type SchemaClasses = HashMap<String, SchemaType>;
 pub type SchemaFields = HashMap<String, SchemaField>;
 
 fn read_schema(path: &str) -> Document {
-	let data = utility::read_pub_file(path);
-	parse_schema(&data).expect(&format!("File `public/{}` is not valid GraphQL schema!", path)[..])
+	let data = utility::read_db_file(path);
+	parse_schema(&data)
+		.expect(&format!("File `database/{}` is not valid GraphQL schema!", path)[..])
 }
 
 fn traverse_object(object: &ObjectType) -> SchemaFields {
@@ -147,11 +165,11 @@ pub struct InstropectionParser {
 	pub database: parsing::DatabaseIndex,
 }
 
-pub fn build_schema_instropection() -> InstropectionParser {
+pub fn build_schema_instropection(db: &str) -> InstropectionParser {
 	let mut fields = Vec::new();
 	let mut types = Vec::new();
 	let mut enums = Vec::new();
-	let doc = read_schema("schema.gql");
+	let doc = read_schema(&format!("{}/schema.gql", db)[..]);
 
 	for def in &doc.definitions {
 		match &def {
@@ -169,7 +187,7 @@ pub fn build_schema_instropection() -> InstropectionParser {
 					let mut subfields = Vec::new();
 					for field in &object.fields {
 						fields.push(json!({
-							"id": object.name.clone()+"."+ &field.name[..],
+							"id": format!("{}.{}", object.name, field.name),
 							"name": field.name,
 							"description": field.description,
 							"isDeprecated": false,
@@ -227,16 +245,23 @@ pub fn build_schema_instropection() -> InstropectionParser {
 	}
 	InstropectionParser {
 		schema: traverse_schema("instropection.gql"),
-		database: [("__Schema".to_owned(), vec![json!({
-				"id": "__Schema",
-				"queryType": "Query",
-				"types": declared_types,
-				"directives": [],
-				"mutationType": null,
-			})]),
+		database: [
+			(
+				"__Schema".to_owned(),
+				vec![json!({
+					"id": "__Schema",
+					"queryType": "Query",
+					"types": declared_types,
+					"directives": [],
+					"mutationType": null,
+				})],
+			),
 			("__Type".to_owned(), types),
 			("__Field".to_owned(), fields),
 			("__EnumValue".to_owned(), enums),
-			].iter().cloned().collect()
+		]
+		.iter()
+		.cloned()
+		.collect(),
 	}
 }

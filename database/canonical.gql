@@ -1,0 +1,26 @@
+schema {
+  query: Query
+  mutation: Mutation
+}
+
+type Query {
+	databases: [Database!]!
+}
+
+type Database {
+	""" @default name; """
+	id: ID!
+	name: String!
+	schema: String!
+}
+
+input DatabaseInput {
+	name: String
+	schema: String
+}
+
+type Mutation {
+	createDatabase(values: DatabaseInput!): Database
+	updateDatabase(id: ID!, values: DatabaseInput!): Database
+	deleteDatabase(id: ID!)
+}

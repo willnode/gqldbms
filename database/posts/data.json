@@ -1,0 +1,33 @@
+{
+	"Query": [{
+		"id": 0,
+		"author": [1, 2],
+		"feed": [1, 2, 3]
+	}],
+	"User": [{
+		"id": 1,
+		"username": "John Doe",
+		"posts": [
+			1, 2
+		]
+	}, {
+		"id": 2,
+		"username": "Alex Martin",
+		"posts": [
+			3
+		]
+	}],
+	"Post": [{
+		"id": 1,
+		"title": "Skywalker off the Road",
+		"author": 1
+	}, {
+		"id": 2,
+		"title": "Truth of Science",
+		"author": 1
+	}, {
+		"id": 3,
+		"title": "Celebrating Alex",
+		"author": 2
+	}]
+}
