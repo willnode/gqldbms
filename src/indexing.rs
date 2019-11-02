@@ -1,4 +1,4 @@
-use super::schema;
+use super::structure;
 use super::parsing;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -45,10 +45,10 @@ where
 	h
 }
 
-pub fn build_hashmaps(db: &parsing::DatabaseIndex, schema: &schema::SchemaClasses) -> DatabaseHashmaps {
+pub fn build_hashmaps(db: &parsing::DatabaseIndex, schema: &structure::StructureIndex) -> DatabaseHashmaps {
 	let mut hashes: DatabaseHashmaps = HashMap::new();
 	for (name, classes) in db {
-		if !schema.contains_key(name) {
+		if !schema.hashed_objects.contains_key(name) {
 			// No indexing needed, 'cause we can't infer exact type this way
 			// Anyway if things doesn't exist in schema, it never be looked up, so don't panic.
 			hashes.insert(name.clone(), Option::None);
@@ -58,27 +58,23 @@ pub fn build_hashmaps(db: &parsing::DatabaseIndex, schema: &schema::SchemaClasse
 			let arr_classes = classes;
 			let (field_name, hash) = (
 				"id".to_owned(),
-				match &schema[name] {
-					schema::SchemaType::Object(obj) => match obj.get("id") {
+				match &schema.find_object(name) {
+					structure::StructureItem::Object(obj) => match obj.find_field("id") {
 						Option::Some(field) => {
-							if !field.data_type.is_indexed {
-								panic!("id must be indexable!")
-							} else {
-								match &field.data_type.name_type[..] {
-									"string" => FieldHashmaps::String(subindex_hashmaps(
-										arr_classes,
-										|value| value["id"].as_str().unwrap().to_string(),
-									)),
-									"i32" => FieldHashmaps::I32(subindex_hashmaps(
-										arr_classes,
-										|value| value["id"].as_i64().unwrap().try_into().unwrap(),
-									)),
-									"u64" => FieldHashmaps::U64(subindex_hashmaps(
-										arr_classes,
-										|value| value["id"].as_u64().unwrap(),
-									)),
-									_ => panic!("id is not indexable!"),
-								}
+							match &field.data_type.kind[..] {
+								"string" => FieldHashmaps::String(subindex_hashmaps(
+									arr_classes,
+									|value| value["id"].as_str().unwrap().to_string(),
+								)),
+								"i32" => FieldHashmaps::I32(subindex_hashmaps(
+									arr_classes,
+									|value| value["id"].as_i64().unwrap().try_into().unwrap(),
+								)),
+								"u64" => FieldHashmaps::U64(subindex_hashmaps(
+									arr_classes,
+									|value| value["id"].as_u64().unwrap(),
+								)),
+								_ => panic!("id is not indexable!"),
 							}
 						}
 						_ => panic!("id is not exist in one of schema class!"),

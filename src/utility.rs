@@ -1,8 +1,9 @@
+
 use std::fs::File;
 use std::io::Read;
 use graphql_parser::query::Value as GraphValue;
 use serde_json::Value as JSONValue;
-
+use std::io::Write;
 pub fn read_pub_file(path: &str) -> String {
 	let uri = String::from("public/") + path;
 	let mut file = File::open(uri).expect(&format!("Unable to open `public/{}`", path)[..]);
@@ -19,6 +20,11 @@ pub fn read_db_file(path: &str) -> String {
 	data
 }
 
+pub fn write_db_file(path: &str, text: Vec<u8>) {
+	let uri = String::from("database/") + path;
+	let mut file = File::create(uri).expect(&format!("Unable to open `database/{}`", path)[..]);
+	file.write_all(&text).expect(&format!("Unable to read `database/{}` (Invalid UTF-8 file?)", path)[..]);
+}
 
 pub fn gql2serde_value(v: &GraphValue) -> JSONValue {
 	match v {

@@ -4,6 +4,7 @@ extern crate hyper;
 pub mod indexing;
 pub mod parsing;
 pub mod schema;
+pub mod structure;
 pub mod utility;
 
 use futures::future;
@@ -48,11 +49,27 @@ impl App {
         for file in files {
             filess.insert(file.to_owned(), utility::read_pub_file(&file));
         }
-        let config : Config = toml::from_str(&utility::read_db_file("config.toml")[..]).expect("config.toml is not valid!");
+        let config: Config = toml::from_str(&utility::read_db_file("config.toml")[..])
+            .expect("config.toml is not valid!");
 
-        let dbs =  config.database.iter().map(|db| (db.name.clone(),
-        parsing::QueryParser::new(parsing::read_database(&db.name[..]), schema::read_schema(&db.name[..])))
-        ).collect::<HashMap<String, parsing::QueryParser>>();
+        let dbs = config
+            .database
+            .iter()
+            .map(|db| {
+                let sch = schema::traverse_schema(&schema::read_schema(
+                    &format!("{}/schema.gql", db.name)[..],
+                ));
+                utility::write_db_file(
+                    &format!("{}/schema.json", db.name)[..],
+                    json!(sch).to_string().as_bytes().to_vec(),
+                );
+                println!("Loading {}", db.name);
+                (
+                    db.name.clone(),
+                    parsing::QueryParser::new(parsing::read_database(&db.name[..]), sch),
+                )
+            })
+            .collect::<HashMap<String, parsing::QueryParser>>();
         App {
             parser: dbs,
             statics: filess,
@@ -61,9 +78,18 @@ impl App {
 
     fn graphql_api(&self, req: Request<Body>) -> ResponseFuture {
         // A web api to run against
-        let urlpa = url::Url::parse("https://example.com").unwrap().join(&req.uri().to_string()).unwrap();
+        let urlpa = url::Url::parse("https://example.com")
+            .unwrap()
+            .join(&req.uri().to_string())
+            .unwrap();
         let mut db = urlpa.query_pairs();
-        let dbb = db.find(|(k,_)| k=="db").unwrap_or((std::borrow::Cow::Borrowed("db"),std::borrow::Cow::Borrowed( ""))).1;
+        let dbb = db
+            .find(|(k, _)| k == "db")
+            .unwrap_or((
+                std::borrow::Cow::Borrowed("db"),
+                std::borrow::Cow::Borrowed(""),
+            ))
+            .1;
         let parser = self.parser[&dbb[..]].clone();
         Box::new(
             req.into_body()

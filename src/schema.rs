@@ -1,31 +1,29 @@
-use super::{parsing, utility};
+use super::{parsing, structure, utility};
 use graphql_parser::parse_schema;
-use graphql_parser::schema::{{Document, Type, Definition, TypeDefinition, ObjectType}};
-use std::collections::{HashMap, HashSet};
+use graphql_parser::schema::{Definition, Document, ObjectType, Type, TypeDefinition};
+use serde_json::Value as JSONValue;
+use std::collections::{HashMap};
 use std::ops::Deref;
 
-pub fn get_field_type(t: &Type) -> SchemaFieldReturnType {
-	let mut r = SchemaFieldReturnType {
+pub fn get_field_type(t: &Type) -> structure::StructureReturnType {
+	let mut r = structure::StructureReturnType {
 		is_array: false,
-		is_array_non_nullable: false,
-		name_type: String::new(),
-		is_type_non_nullable: false,
+		name: String::new(),
+		is_nullable: true,
 	};
 	let mut t = t.clone();
 	loop {
 		t = match &t {
 			Type::ListType(tt) => {
 				r.is_array = true;
-				r.is_array_non_nullable = r.is_type_non_nullable;
-				r.is_type_non_nullable = false;
 				tt.deref().clone()
 			}
 			Type::NonNullType(tt) => {
-				r.is_type_non_nullable = true;
+				r.is_nullable = false;
 				tt.deref().clone()
 			}
 			Type::NamedType(name) => {
-				r.name_type.push_str(name);
+				r.name.push_str(name);
 				break;
 			}
 		};
@@ -33,8 +31,8 @@ pub fn get_field_type(t: &Type) -> SchemaFieldReturnType {
 	r
 }
 
-pub fn get_data_type(t: &SchemaFieldReturnType, d: &str) -> SchemaFieldDataType {
-	let mut data_type = match &t.name_type[..] {
+pub fn get_data_type(t: &structure::StructureReturnType, d: &str) -> structure::StructureDataType {
+	let mut data_type = match &t.name[..] {
 		"ID" => "string",
 		"Int" => "i32",
 		"Float" => "f64",
@@ -45,57 +43,13 @@ pub fn get_data_type(t: &SchemaFieldReturnType, d: &str) -> SchemaFieldDataType 
 	if d.contains("@type as i32;") {
 		data_type = "i32";
 	}
-	SchemaFieldDataType {
-		is_array: t.is_array,
-		is_indexed: t.name_type == "ID",
-		is_unique: t.name_type == "ID",
-		name_type: data_type.to_owned(),
+	structure::StructureDataType {
+		backreference: None,
+		default: None, // ID TODO
+		resolver: None,
+		kind: data_type.to_owned(),
 	}
 }
-
-#[derive(Clone, Debug)]
-pub struct SchemaField {
-	pub name: String,
-	pub description: String,
-	pub data_type: SchemaFieldDataType,
-	pub return_type: SchemaFieldReturnType,
-}
-
-impl SchemaField {
-	pub fn new(name: &str, data_type: &str, array: bool) -> SchemaField {
-		let rtype = SchemaFieldReturnType {
-			is_array: array,
-			is_array_non_nullable: true,
-			name_type: data_type.to_owned(),
-			is_type_non_nullable: name == "id",
-		};
-		SchemaField {
-			name: name.to_owned(),
-			description: "".to_owned(),
-			data_type: get_data_type(&rtype, ""),
-			return_type: rtype,
-		}
-	}
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SchemaFieldDataType {
-	pub name_type: String,
-	pub is_array: bool,
-	pub is_unique: bool,
-	pub is_indexed: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SchemaFieldReturnType {
-	pub is_array: bool,
-	pub is_array_non_nullable: bool,
-	pub name_type: String,
-	pub is_type_non_nullable: bool,
-}
-
-pub type SchemaClasses = HashMap<String, SchemaType>;
-pub type SchemaFields = HashMap<String, SchemaField>;
 
 pub fn read_schema(path: &str) -> Document {
 	let data = utility::read_db_file(path);
@@ -103,8 +57,8 @@ pub fn read_schema(path: &str) -> Document {
 		.expect(&format!("File `database/{}` is not valid GraphQL schema!", path)[..])
 }
 
-fn traverse_object(object: &ObjectType) -> SchemaFields {
-	let mut fields = HashMap::new();
+fn traverse_object(object: &ObjectType) -> structure::StructureType {
+	let mut fields = Vec::new();
 	for field in &object.fields {
 		let return_type = get_field_type(&field.field_type);
 		let description = match &field.description {
@@ -112,124 +66,109 @@ fn traverse_object(object: &ObjectType) -> SchemaFields {
 			_ => String::new(),
 		};
 		let data_type = get_data_type(&return_type, &description[..]);
-		fields.insert(
-			field.name.clone(),
-			SchemaField {
-				name: field.name.clone(),
-				description: description,
-				return_type: return_type,
-				data_type: data_type,
-			},
-		);
+		fields.push(structure::StructureField {
+			name: field.name.clone(),
+			description: description,
+			return_type: return_type,
+			data_type: data_type,
+		});
 	}
-	fields
+	structure::StructureType {
+		name: object.name.clone(),
+		description: object.description.as_ref().unwrap_or(&"".to_owned()).clone(),
+		fields: fields,
+		hashed_fields: HashMap::new(),
+	}
 }
 
-#[derive(Clone, Debug)]
-pub enum SchemaType {
-	Object(SchemaFields),
-	Enum(HashSet<String>),
-}
-
-pub fn traverse_schema(doc: &Document) -> SchemaClasses {
-	let mut hashes = HashMap::new();
+pub fn traverse_schema(doc: &Document) -> structure::StructureIndex {
+	let mut objects = Vec::new();
+	let mut enums = Vec::new();
 	for def in &doc.definitions {
 		match &def {
 			Definition::TypeDefinition(typedef) => match &typedef {
 				TypeDefinition::Scalar(_) => {}
 				TypeDefinition::Object(object) => {
-					hashes.insert(
-						object.name.clone(),
-						SchemaType::Object(traverse_object(&object)),
-					);
+					objects.push(traverse_object(&object));
 				}
 				TypeDefinition::Enum(enu) => {
 					let enus = enu
 						.values
 						.iter()
-						.map(|x| x.name.clone())
-						.collect::<HashSet<String>>();
-					hashes.insert(enu.name.clone(), SchemaType::Enum(enus));
+						.map(|x| (x.name.clone(), json!(x.name)))
+						.collect::<HashMap<String, JSONValue>>();
+					enums.push(structure::StructureEnum {
+						name: enu.name.clone(),
+						description: enu.description.as_ref().unwrap_or(&"".to_owned()).clone(),
+						values: enus,
+					});
 				}
 				_ => {}
 			},
 			_ => {}
 		}
 	}
-	hashes
+	(structure::StructureIndex {
+		name: "".to_owned(),
+		objects: objects,
+		enums: enums,
+		hashed_objects: HashMap::new(),
+	}).into_perform_indexing()
 }
 
 pub struct InstropectionParser {
-	pub schema: SchemaClasses,
+	pub schema: structure::StructureIndex,
 	pub database: parsing::DatabaseIndex,
 }
 
-pub fn build_schema_instropection(doc: &Document) -> InstropectionParser {
+pub fn build_schema_instropection(doc: &structure::StructureIndex) -> InstropectionParser {
 	let mut fields = Vec::new();
 	let mut types = Vec::new();
 	let mut enums = Vec::new();
 
-	for def in &doc.definitions {
-		match &def {
-			Definition::TypeDefinition(typedef) => match &typedef {
-				TypeDefinition::Scalar(object) => {
-					types.push(json!({
-						"id": object.name.clone(),
-						"name": object.name.clone(),
-						"kind": "SCALAR",
-						"description": &object.description,
-						"interfaces": []
-					}));
-				}
-				TypeDefinition::Object(object) => {
-					let mut subfields = Vec::new();
-					for field in &object.fields {
-						fields.push(json!({
-							"id": format!("{}.{}", object.name, field.name),
-							"name": field.name,
-							"description": field.description,
-							"isDeprecated": false,
-							"args": [],
-							"type": get_field_type(&field.field_type).name_type,
-						}));
-						subfields.push(object.name.clone() + "." + &field.name[..]);
-					}
-					types.push(json!({
-						"id": object.name.clone(),
-						"name": object.name.clone(),
-						"kind": "OBJECT",
-						"description": &object.description,
-						"fields": subfields,
-						"interfaces": []
-					}));
-				}
-				TypeDefinition::Enum(object) => {
-					let mut subvalues = Vec::new();
-					for value in &object.values {
-						enums.push(json!({
-							"id": object.name.clone()+"."+ &value.name[..],
-							"name": value.name,
-							"description": value.description,
-						}));
-						subvalues.push(object.name.clone() + "." + &value.name[..]);
-					}
-					types.push(json!({
-						"id": object.name.clone(),
-						"name": object.name.clone(),
-						"kind": "ENUM",
-						"description": &object.description,
-						"enumValues": subvalues,
-						"interfaces": []
-					}));
-				}
-				TypeDefinition::InputObject(_object) => {
-
-				}
-				_ => {}
-			},
-			_ => {}
+	for object in &doc.objects {
+		let mut subfields = Vec::new();
+		for field in &object.fields {
+			fields.push(json!({
+				"id": format!("{}.{}", object.name, field.name),
+				"name": field.name,
+				"description": field.description,
+				"isDeprecated": false,
+				"args": [],
+				"type": field.return_type.name.clone(),
+			}));
+			subfields.push(object.name.clone() + "." + &field.name[..]);
 		}
+		types.push(json!({
+			"id": object.name.clone(),
+			"name": object.name.clone(),
+			"kind": "OBJECT",
+			"description": &object.description,
+			"fields": subfields,
+			"interfaces": []
+		}));
 	}
+
+	for object in &doc.enums {
+		let mut subvalues = Vec::new();
+		for (key, _) in &object.values {
+			enums.push(json!({
+				"id": object.name.clone()+"."+ &key[..],
+				"name": key.clone(),
+				"description": "".to_owned(),
+			}));
+			subvalues.push(object.name.clone() + "." + &key[..]);
+		}
+		types.push(json!({
+			"id": object.name.clone(),
+			"name": object.name.clone(),
+			"kind": "ENUM",
+			"description": &object.description,
+			"enumValues": subvalues,
+			"interfaces": []
+		}));
+	}
+
 	let declared_types = types
 		.iter()
 		.map(|x| x["id"].clone())
