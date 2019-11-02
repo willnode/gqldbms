@@ -1,10 +1,10 @@
 use graphql_parser::query::*;
-use serde_json::Value;
+use serde_json::Value as JSONValue;
 
 use super::{indexing, schema, utility};
 use std::collections::HashMap;
 
-pub type DatabaseIndex = HashMap<String, Vec<Value>>;
+pub type DatabaseIndex = HashMap<String, Vec<JSONValue>>;
 
 #[derive(Clone)]
 pub struct QueryParser {
@@ -18,27 +18,27 @@ struct ResolverInfo<'a, 'b> {
 	field_name: &'a str,
 	field_type: &'b schema::SchemaFieldReturnType,
 	fragments: &'a HashMap<String, &'a FragmentDefinition>,
-	variables: &'a serde_json::Map<String, Value>,
+	variables: &'a serde_json::Map<String, JSONValue>,
 }
 
 #[derive(Debug, Clone)]
 struct TraverserInfo<'a> {
 	class_name: &'a str,
 	fragments: &'a HashMap<String, &'a FragmentDefinition>,
-	variables: &'a serde_json::Map<String, Value>,
+	variables: &'a serde_json::Map<String, JSONValue>,
 }
 
-fn read_database(db: &str) -> DatabaseIndex {
+pub fn read_database(db: &str) -> DatabaseIndex {
 	let data = utility::read_db_file(&format!("{}/data.json", db)[..]);
 	serde_json::from_str(&data).expect("File `database/data.json` is not valid JSON object!")
 }
 
 impl QueryParser {
-	pub fn new(dbpath: &str) -> QueryParser {
+	pub fn new(database: DatabaseIndex, schema: graphql_parser::schema::Document) -> QueryParser {
 		// Load necessary files (should be done before server starts, actually)
-		let mut sch = schema::traverse_schema(&format!("{}/schema.gql", dbpath)[..]);
-		let instropection = schema::build_schema_instropection(dbpath);
-		let mut db = read_database(dbpath);
+		let mut sch = schema::traverse_schema(&schema);
+		let instropection = schema::build_schema_instropection(&schema);
+		let mut db = database;
 		db.extend(instropection.database);
 		// Query pre-index injects
 		{
@@ -125,17 +125,17 @@ impl QueryParser {
 	fn _find_match(
 		&self,
 		class_name: &str,
-		iter: &Vec<Value>,
+		iter: &Vec<JSONValue>,
 		args: &Vec<(String, graphql_parser::query::Value)>,
-	) -> Value {
+	) -> JSONValue {
 		self.database.get(class_name).expect(&format!("{} not found", class_name)[..]);
-		let mut result: Vec<Value> = iter
+		let mut result: Vec<JSONValue> = iter
 			.iter()
 			.map(|x| {
 				self.database[class_name]
 					.iter()
 					.find(|y| &y["id"] == x)
-					.unwrap_or(&Value::Null)
+					.unwrap_or(&JSONValue::Null)
 					.clone()
 			})
 			.collect();
@@ -143,7 +143,7 @@ impl QueryParser {
 			let val2 = utility::gql2serde_value(val);
 			result = result
 				.into_iter()
-				.filter(|x| x[&key] == Value::Null || x[&key] == val2)
+				.filter(|x| x[&key] == JSONValue::Null || x[&key] == val2)
 				.collect();
 		}
 
@@ -151,15 +151,15 @@ impl QueryParser {
 	}
 
 	// Resolve/Expand JSON database to object representation (by looking their Schema Type)
-	fn resolve_id_to_object(&self, id: &Value, class_name: &String) -> Value {
+	fn resolve_id_to_object(&self, id: &JSONValue, class_name: &String) -> JSONValue {
 		match id {
-			Value::Array(arr) => {
+			JSONValue::Array(arr) => {
 				// Unpack array and resolve individually
 
 				json!(arr
 					.iter()
 					.map(|x| self.resolve_id_to_object(x, &class_name))
-					.collect::<Vec<Value>>())
+					.collect::<Vec<JSONValue>>())
 			}
 			x => {
 				match &class_name[..] {
@@ -196,8 +196,8 @@ impl QueryParser {
 							_ => panic!(),
 						};
 						match keyy {
-							Some(v) => arr[*v].clone(),
-							_ => Value::Null,
+							Some(v) => arr[v[0]].clone(),
+							_ => JSONValue::Null,
 						}
 					}
 				}
@@ -207,21 +207,15 @@ impl QueryParser {
 
 	fn resolve_field(
 		&self,
-		parent: &Value,
+		parent: &JSONValue,
 		_args: &Vec<(String, graphql_parser::query::Value)>,
 		context: &Field,
 		info: ResolverInfo,
-	) -> Value {
+	) -> JSONValue {
 		let par = match &parent[&info.field_name] {
-			Value::Array(arr) => {
-				if !info.field_type.is_array {
-					self.resolve_id_to_object(&arr[0], &info.field_type.name_type)
-				} else {
-					self.resolve_id_to_object(&parent[&info.field_name], &info.field_type.name_type)
-					//self.find_match(&info.field_type.name_type, arr, args)
-				}
-			}
-			Value::Null => return Value::Null, // resolving null is null
+			JSONValue::Array(arr) if !info.field_type.is_array =>
+					self.resolve_id_to_object(&arr[0], &info.field_type.name_type),
+			JSONValue::Null => return JSONValue::Null, // resolving null is null
 			n @ _ => self.resolve_id_to_object(&n, &info.field_type.name_type),
 		};
 
@@ -238,15 +232,15 @@ impl QueryParser {
 
 	fn traverse_selection(
 		&self,
-		parent: &Value,
+		parent: &JSONValue,
 		context: &SelectionSet,
 		info: TraverserInfo,
-	) -> Value {
+	) -> JSONValue {
 		match parent {
-			Value::Array(arr) => json!(arr
+			JSONValue::Array(arr) => json!(arr
 				.iter()
 				.map(|obj| self.traverse_selection(&obj, &context, info.clone()))
-				.collect::<Vec<Value>>()),
+				.collect::<Vec<JSONValue>>()),
 			_ => {
 				match &info.class_name[..] {
 					"String" | "ID" | "Number" | "Float" | "Int" => parent.clone(),
@@ -274,7 +268,7 @@ impl QueryParser {
 															variables: &info.variables,
 														},
 													),
-													false => Value::Null,
+													false => JSONValue::Null,
 												},
 											);
 										}
@@ -287,7 +281,7 @@ impl QueryParser {
 												info.clone(),
 											);
 											match frag_values {
-												Value::Object(obj) => {
+												JSONValue::Object(obj) => {
 													for (name, val) in obj {
 														values.insert(name, val);
 													}
@@ -300,7 +294,7 @@ impl QueryParser {
 								}
 								json!(values)
 							}
-							_ => Value::Null,
+							_ => JSONValue::Null,
 						}
 					}
 				}
@@ -311,8 +305,8 @@ impl QueryParser {
 	pub fn traverse_query(
 		&self,
 		ast: &Document,
-		variables: &serde_json::Map<String, Value>,
-	) -> Value {
+		variables: &serde_json::Map<String, JSONValue>,
+	) -> JSONValue {
 		// Look for fragments before doing actual operation
 		let fragments = ast
 			.definitions

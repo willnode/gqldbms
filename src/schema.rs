@@ -1,6 +1,6 @@
 use super::{parsing, utility};
 use graphql_parser::parse_schema;
-use graphql_parser::schema::*;
+use graphql_parser::schema::{{Document, Type, Definition, TypeDefinition, ObjectType}};
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
@@ -97,7 +97,7 @@ pub struct SchemaFieldReturnType {
 pub type SchemaClasses = HashMap<String, SchemaType>;
 pub type SchemaFields = HashMap<String, SchemaField>;
 
-fn read_schema(path: &str) -> Document {
+pub fn read_schema(path: &str) -> Document {
 	let data = utility::read_db_file(path);
 	parse_schema(&data)
 		.expect(&format!("File `database/{}` is not valid GraphQL schema!", path)[..])
@@ -131,10 +131,9 @@ pub enum SchemaType {
 	Enum(HashSet<String>),
 }
 
-pub fn traverse_schema(file: &str) -> SchemaClasses {
-	let doc = read_schema(file);
+pub fn traverse_schema(doc: &Document) -> SchemaClasses {
 	let mut hashes = HashMap::new();
-	for def in doc.definitions {
+	for def in &doc.definitions {
 		match &def {
 			Definition::TypeDefinition(typedef) => match &typedef {
 				TypeDefinition::Scalar(_) => {}
@@ -165,11 +164,10 @@ pub struct InstropectionParser {
 	pub database: parsing::DatabaseIndex,
 }
 
-pub fn build_schema_instropection(db: &str) -> InstropectionParser {
+pub fn build_schema_instropection(doc: &Document) -> InstropectionParser {
 	let mut fields = Vec::new();
 	let mut types = Vec::new();
 	let mut enums = Vec::new();
-	let doc = read_schema(&format!("{}/schema.gql", db)[..]);
 
 	for def in &doc.definitions {
 		match &def {
@@ -224,6 +222,9 @@ pub fn build_schema_instropection(db: &str) -> InstropectionParser {
 						"interfaces": []
 					}));
 				}
+				TypeDefinition::InputObject(_object) => {
+
+				}
 				_ => {}
 			},
 			_ => {}
@@ -244,7 +245,7 @@ pub fn build_schema_instropection(db: &str) -> InstropectionParser {
 		}));
 	}
 	InstropectionParser {
-		schema: traverse_schema("instropection.gql"),
+		schema: traverse_schema(&read_schema("instropection.gql")),
 		database: [
 			(
 				"__Schema".to_owned(),

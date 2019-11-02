@@ -50,7 +50,9 @@ impl App {
         }
         let config : Config = toml::from_str(&utility::read_db_file("config.toml")[..]).expect("config.toml is not valid!");
 
-        let dbs =  config.database.iter().map(|db| (db.name.clone(), parsing::QueryParser::new(&db.name[..]))).collect::<HashMap<String, parsing::QueryParser>>();
+        let dbs =  config.database.iter().map(|db| (db.name.clone(),
+        parsing::QueryParser::new(parsing::read_database(&db.name[..]), schema::read_schema(&db.name[..])))
+        ).collect::<HashMap<String, parsing::QueryParser>>();
         App {
             parser: dbs,
             statics: filess,

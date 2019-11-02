@@ -25,7 +25,7 @@
         <!-- Table lists -->
         <div class="list-group list-group-hover">
           <button class="list-group-item list-group-item-action" :class="{ active: i == activeType }"
-            v-for="(t, i) in types" @click="activeType = i; fetchForActiveType()">
+            v-for="(t, i) in types" v-if="t.kind === 'OBJECT'" @click="activeType = i; activeField=0; fetchForActiveType()">
             {{ t.name }}
           </button>
         </div>
@@ -55,7 +55,11 @@
             <div class="d-flex align-items-center" v-for="fe in [records[types[activeType].name][activeField][f.name]]">
               <div class="mr-2">{{f.name}}: </div>
               <div class="list-group list-group-horizontal overflow-hidden" v-if="Array.isArray(fe)">
-                <div class="list-group-item py-0" v-for="fee in fe">{{ fee.id }}</div>
+                <div class="list-group-item py-0" v-for="fee in fe">
+                  <span v-if="fee === null"><i class="text-muted">null</i></span>
+                  <span v-else-if="typeof fee === 'object'">{{ fee.id }}</span>
+                  <span v-else>{{ fee }}</span>
+                </div>
               </div>
               <span v-else-if="fe === null"><i class="text-muted">null</i></span>
               <span v-else-if="typeof fe === 'object'">

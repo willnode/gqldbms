@@ -11,16 +11,54 @@ type Database {
 	""" @default name; """
 	id: ID!
 	name: String!
-	schema: String!
+	types: [Type!]!
+	enums: [Enum!]!
+}
+
+type Enum {
+	""" @default database.id+"."+name; """
+	id: ID!
+	name: String!
+	values: [String!]!
+	database: Database!
+}
+
+type Type {
+	""" @default database.id+"."+name; """
+	id: ID!
+	name: String!
+	fields: [Field!]
+	records: [Record!]
+	database: Database!
+}
+
+type Field {
+	""" @default type.id+"."+name; """
+	id: ID!
+	name: String!
+	type: String!
+	isArray: String!
+	isNullable: Boolean!
+	type: Type!
+}
+
+scalar Object
+
+type Record {
+	id: ID!
+	values: [Object!]!
+	type: Type!
 }
 
 input DatabaseInput {
 	name: String
-	schema: String
+	types: [ID!]
+	enums: [ID!]
 }
 
 type Mutation {
 	createDatabase(values: DatabaseInput!): Database
 	updateDatabase(id: ID!, values: DatabaseInput!): Database
-	deleteDatabase(id: ID!)
+	deleteDatabase(id: ID!): Database
+
 }

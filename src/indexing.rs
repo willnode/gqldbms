@@ -6,10 +6,9 @@ use std::convert::TryInto;
 
 #[derive(Clone)]
 pub enum FieldHashmaps {
-	String(HashMap<String, usize>),
-	Boolean(HashMap<bool, usize>),
-	I32(HashMap<i32, usize>),
-	U64(HashMap<u64, usize>),
+	String(HashMap<String, Vec<usize>>),
+	I32(HashMap<i32, Vec<usize>>),
+	U64(HashMap<u64, Vec<usize>>),
 	Null,
 }
 
@@ -30,14 +29,18 @@ where
 	h
 }
 
-pub fn subindex_hashmaps<T, F>(classes: &Vec<Value>, converter: F) -> HashMap<T, usize>
+pub fn subindex_hashmaps<T, F>(classes: &Vec<Value>, converter: F) -> HashMap<T, Vec<usize>>
 where
 	F: Fn(&Value) -> T,
 	T: std::hash::Hash + Eq,
 {
-	let mut h = HashMap::new();
+	let mut h : HashMap<T, Vec<usize>> = HashMap::new();
 	for (index, value) in classes.iter().enumerate() {
-		h.insert(converter(&value), index);
+		let key = converter(&value);
+		match h.get_mut(&key) {
+			Some(n) => { n.push(index); },
+			None => { h.insert(key, vec![index]); }
+		}
 	}
 	h
 }

@@ -1,0 +1,134 @@
+{
+	"database": {
+		"objects": [{
+			"name": "User",
+			"description": "",
+			"fields": [{
+				"name": "id",
+				"data_type": {
+					"kind": "u64",
+					"default": {
+						"kind": "AUTO_INCREMENT",
+						"reference": 20
+					},
+					"backreference": null
+				},
+				"return_type": {
+					"name": "ID",
+					"isArray": false,
+					"isNullable": false
+				}
+			}, {
+				"name": "username",
+				"data_type": {
+					"kind": "string",
+					"default": null,
+					"backreference": null
+				},
+				"return_type": {
+					"name": "String",
+					"isArray": false,
+					"isNullable": false
+				}
+			}, {
+				"name": "posts",
+				"data_type": {
+					"kind": "u64",
+					"default": null,
+					"backreference": null
+				},
+				"return_type": {
+					"name": "Post",
+					"isArray": true,
+					"isNullable": false
+				}
+			}]
+		}, {
+			"name": "Post",
+			"description": "",
+			"fields": [{
+				"name": "id",
+				"data_type": {
+					"kind": "u64",
+					"default": {
+						"kind": "AUTO_INCREMENT",
+						"reference": 20
+					},
+					"backreference": null
+				},
+				"return_type": {
+					"name": "ID",
+					"isArray": false,
+					"isNullable": false
+				}
+			}, {
+				"name": "title",
+				"data_type": {
+					"kind": "string",
+					"default": null,
+					"backreference": null
+				},
+				"return_type": {
+					"name": "String",
+					"isArray": false,
+					"isNullable": false
+				}
+			}, {
+				"name": "author",
+				"data_type": {
+					"kind": "u64",
+					"default": null,
+					"backreference": null
+				},
+				"return_type": {
+					"name": "User",
+					"isArray": false,
+					"isNullable": false
+				}
+			}]
+		}, {
+			"name": "Query",
+			"description": "",
+			"fields": [{
+				"name": "author",
+				"data_type": {
+					"kind": "u64",
+					"default": null,
+					"backreference": null,
+					"resolver": {
+						"kind": "ALL_REFERENCE",
+						"flags": [],
+						"args": [{
+							"name": "ID",
+							"isArray": false,
+							"isNullable": false
+						}]
+					}
+				},
+				"return_type": {
+					"name": "User",
+					"isArray": false,
+					"isNullable": false
+				}
+			}, {
+				"name": "posts",
+				"data_type": {
+					"kind": "u64",
+					"default": null,
+					"backreference": null,
+					"resolver": {
+						"kind": "ALL_REFERENCE",
+						"flags": [],
+						"args": []
+					}
+				},
+				"return_type": {
+					"name": "Post",
+					"isArray": false,
+					"isNullable": false
+				}
+			}]
+		}],
+		"enums": []
+	}
+}
