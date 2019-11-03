@@ -1,11 +1,13 @@
 use serde_json::Value as JSONValue;
 use std::collections::HashMap;
+use serde_derive::{Serialize, Deserialize};
 
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureIndex {
 	pub name: String,
 	pub objects: Vec<StructureType>,
 	pub enums: Vec<StructureEnum>,
+	pub scalars: Vec<StructureScalar>,
 	#[serde(skip)]
 	pub hashed_objects: HashMap<String, (usize, usize)>,
 }
@@ -13,11 +15,13 @@ pub struct StructureIndex {
 pub enum StructureItem<'a> {
 	Object(&'a StructureType),
 	Enum(&'a StructureEnum),
+	Scalar(&'a StructureScalar),
 	None,
 }
 pub enum StructureItemMut<'a> {
 	Object(&'a mut StructureType),
 	Enum(&'a mut StructureEnum),
+	Scalar(&'a mut StructureScalar),
 	None,
 }
 
@@ -32,6 +36,9 @@ impl StructureIndex {
 		for (i, obj) in self.enums.iter_mut().enumerate() {
 			self.hashed_objects.insert(obj.name.clone(), (1, i));
 		}
+		for (i, obj) in self.scalars.iter_mut().enumerate() {
+			self.hashed_objects.insert(obj.name.clone(), (2, i));
+		}
 	}
 
 	pub fn into_perform_indexing(mut self) -> StructureIndex {
@@ -43,6 +50,7 @@ impl StructureIndex {
 		match self.hashed_objects.get(name) {
 			Some((0, v)) => StructureItem::Object(&self.objects[*v]),
 			Some((1, v)) => StructureItem::Enum(&self.enums[*v]),
+			Some((2, v)) => StructureItem::Scalar(&self.scalars[*v]),
 			_ => StructureItem::None,
 		}
 	}
@@ -50,6 +58,7 @@ impl StructureIndex {
 		match self.hashed_objects.get_mut(name) {
 			Some((0, v)) => StructureItemMut::Object(self.objects.get_mut(*v).unwrap()),
 			Some((1, v)) => StructureItemMut::Enum(self.enums.get_mut(*v).unwrap()),
+			Some((2, v)) => StructureItemMut::Scalar(self.scalars.get_mut(*v).unwrap()),
 			_ => StructureItemMut::None,
 		}
 	}
@@ -62,13 +71,19 @@ impl StructureIndex {
 		self.enums.push(object);
 	}
 }
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct StructureScalar {
+	pub name: String,
+	pub description: String,
+}
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureEnum {
 	pub name: String,
 	pub description: String,
 	pub values: HashMap<String, JSONValue>,
 }
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureType {
 	pub name: String,
 	pub description: String,
@@ -94,7 +109,7 @@ impl StructureType {
 		}
 	}
 }
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureField {
 	pub name: String,
 	pub description: String,
@@ -109,7 +124,7 @@ impl StructureField {
 			description: description,
 			data_type: StructureDataType {
 				resolver: resolver,
-				kind: match &kind[..] {
+				kind: match kind.as_ref() {
 					"ID" => "string",
 					"Int" => "i32",
 					"Float" => "f64",
@@ -127,26 +142,26 @@ impl StructureField {
 	}
 }
 
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureDataType {
 	pub kind: String,
 	pub resolver: Option<StructureDataResolver>,
 }
 
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureReturnType {
 	pub name: String,
 	pub is_array: bool,
 	pub is_nullable: bool,
 }
 
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureDataDefault {
 	pub kind: String,
 	pub reference: JSONValue,
 }
 
-#[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct StructureDataResolver {
 	pub kind: String,
 	pub flags: Vec<String>,

@@ -74,21 +74,20 @@ pub fn load_db(name: &str) -> parsing::QueryParser {
 		format!("database/instropection.gql"),
 	);
 
-	let db = read_database(&json_path[..]);
+	let db = read_database(json_path.as_ref());
 	let sch = if std::fs::metadata(schema_path.clone()).is_ok() {
-		read_structure(&schema_path[..]).into_perform_indexing()
+		read_structure(schema_path.as_ref()).into_perform_indexing()
 	} else {
-		let sch = schema::traverse_schema(&read_schema(&gql_path[..]));
-		write_file(&schema_path[..], json!(sch).to_string().as_bytes().to_vec());
+		let sch = schema::traverse_schema(&read_schema(gql_path.as_ref()));
+		write_file(schema_path.as_ref(), json!(sch).to_string().as_bytes().to_vec());
 		sch
 	};
-	let intros = schema::traverse_schema(&read_schema(&instropection_path[..]));
+	let intros = schema::traverse_schema(&read_schema(instropection_path.as_ref()));
 	parsing::QueryParser::new(db, sch, intros)
 }
 
 pub fn load_canonical(all_db: &HashMap<String, parsing::QueryParser>) -> parsing::QueryParser {
-	let (schema_path, gql_path, instropection_path) = (
-		format!("database/canonical.json"),
+	let (gql_path, instropection_path) = (
 		format!("database/canonical.gql"),
 		format!("database/instropection.gql")
 	);
@@ -118,8 +117,10 @@ pub fn load_canonical(all_db: &HashMap<String, parsing::QueryParser>) -> parsing
 			"databases": []
 		})])
 	].iter().cloned().collect();
-	let sch =  schema::traverse_schema(&read_schema(&gql_path[..]));
-	write_file(&schema_path[..], json!(sch).to_string().as_bytes().to_vec());
-	let intros = schema::traverse_schema(&read_schema(&instropection_path[..]));
-	parsing::QueryParser::new(db, sch, intros)
+	let sch =  schema::traverse_schema(&read_schema(gql_path.as_ref()));
+	// write_file(schema_path.as_ref(), json!(sch).to_string().as_bytes().to_vec());
+	let intros = schema::traverse_schema(&read_schema(instropection_path.as_ref()));
+	let mut res = parsing::QueryParser::new(db, sch, intros);
+	res.is_canonical = true;
+	res
 }

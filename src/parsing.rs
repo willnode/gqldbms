@@ -11,6 +11,7 @@ pub struct QueryParser {
 	pub schema: structure::StructureIndex,
 	pub database: DatabaseIndex,
 	pub hashmaps: indexing::DatabaseHashmaps,
+	pub is_canonical: bool,
 }
 
 impl QueryParser {
@@ -42,34 +43,14 @@ impl QueryParser {
 				}),
 			));
 		}
-		let mut qdata = HashMap::new();
+		// let mut qdata = HashMap::new();
 		let mut qhash = Vec::new();
 
 		for v in &schema.objects {
-			let arr = match db.get(&v.name) {
-				Some(v) => v,
-				_ => continue,
-			};
 			match &schema.find_object(&v.name) {
-				structure::StructureItem::Object(o) => {
-					let field = match o.find_field("id") {
-						Some(v) => v,
-						_ => continue,
-					};
-					let hashes = match &field.data_type.kind[..] {
-						"string" => json!(indexing::subindex_keys(arr, |value| {
-							value["id"].as_str().unwrap().to_string()
-						})),
-						"i32" => json!(indexing::subindex_keys(arr, |value| {
-							value["id"].as_i64().unwrap() as i32
-						})),
-						"u64" => json!(indexing::subindex_keys(arr, |value| {
-							value["id"].as_u64().unwrap()
-						})),
-						_ => panic!("id is not indexable!"),
-					};
+				structure::StructureItem::Object(_) => {
 					let fmtr = format!("values__of_{}", v.name);
-					qdata.insert(fmtr.clone(), hashes);
+					// qdata.insert(fmtr.clone(), hashes);
 					qhash.push(structure::StructureField::from(
 						fmtr.clone(),
 						"".to_owned(),
@@ -85,11 +66,13 @@ impl QueryParser {
 				_ => {}
 			}
 		}
-		// Des tak des
-		db.get_mut("Query").unwrap()[0]
-			.as_object_mut()
-			.unwrap()
-			.extend(qdata);
+		// we require all of these has in DB, altough has no members at all
+		for class in vec!["Query", "Mutation", "Subscription"] {
+			if !db.contains_key(class) {
+				db.insert(class.to_owned(), vec![json!({})]);
+			}
+		}
+
 		match schema.find_object_mut("Query") {
 			structure::StructureItemMut::Object(o) => {
 				for qqq in qhash {
@@ -104,11 +87,13 @@ impl QueryParser {
 		for ooo in instropection.schema.enums {
 			schema.add_enum(ooo);
 		}
+		// println!("{}", json!(db));
 		let hashmap = indexing::build_hashmaps(&db, &schema);
 		QueryParser {
 			schema: schema,
 			database: db,
 			hashmaps: hashmap,
+			is_canonical: false,
 		}
 	}
 
@@ -129,12 +114,12 @@ impl QueryParser {
 			// Null is null
 			JSONValue::Null => JSONValue::Null,
 			x => {
-				match &class_name[..] {
+				match class_name.as_ref() {
 					// A primitive
 					"String" | "ID" | "Number" | "Float" | "Int" => id.clone(),
 					// Object in schema
 					n @ _ => {
-						let arr = match self.database.get(&n[..]) {
+						let arr = match self.database.get(n) {
 							Some(v) => v,
 							_ => {
 								return id.clone();
@@ -179,15 +164,15 @@ impl QueryParser {
 		context: &resolver::ResolverContext,
 		info: &structure::StructureField,
 	) -> JSONValue {
-		let results = resolver::resolve(parent, args, context, info);
-		let par = self.resolve_id_to_object(&results, &info.return_type.name);
-
-		self.traverse_selection(
-			&par,
-			&selector.selection_set,
-			context,
-			&info.return_type.name,
-		)
+		match resolver::resolve(parent, args, context, info) {
+			JSONValue::Null => JSONValue::Null,
+			results @ _ => self.traverse_selection(
+				&self.resolve_id_to_object(&results, &info.return_type.name),
+				&selector.selection_set,
+				context,
+				&info.return_type.name,
+			),
+		}
 	}
 
 	fn traverse_selection(

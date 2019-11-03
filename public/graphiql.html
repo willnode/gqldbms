@@ -112,7 +112,7 @@
         // In a PR preview, it connects to the Star Wars API externally.
         // Change this to point wherever you host your GraphQL server.
 
-        const api = '/graphql?db='+new URL(window.location.href).searchParams.get("db");
+        const api = '/graphql?db='+ (new URL(window.location.href).searchParams.get("db") || "");
         return fetch(api, {
           method: 'post',
           headers: {

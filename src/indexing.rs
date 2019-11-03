@@ -53,48 +53,41 @@ pub fn build_hashmaps(
 	schema: &structure::StructureIndex,
 ) -> DatabaseHashmaps {
 	let mut hashes: DatabaseHashmaps = HashMap::new();
-	for (name, classes) in db {
-		if !schema.hashed_objects.contains_key(name) {
-			// No indexing needed, 'cause we can't infer exact type this way
-			// Anyway if things doesn't exist in schema, it never be looked up, so don't panic.
-			hashes.insert(name.clone(), Option::None);
-		} else {
-			// This type exist in schema. Let's index
-			// WIP: Indexable props should be marked, but now let's just assume it's only ID for now.
-			let arr_classes = classes;
-			let (field_name, hash) = (
-				"id".to_owned(),
-				match &schema.find_object(name) {
-					structure::StructureItem::Object(obj) => match obj.find_field("id") {
-						Option::Some(field) => match &field.data_type.kind[..] {
-							"string" => {
-								FieldHashmaps::String(subindex_hashmaps(arr_classes, |value| {
-									value["id"].as_str().unwrap().to_string()
-								}))
-							}
-							"i32" => FieldHashmaps::I32(subindex_hashmaps(arr_classes, |value| {
-								value["id"].as_i64().unwrap().try_into().unwrap()
-							})),
-							"u64" => FieldHashmaps::U64(subindex_hashmaps(arr_classes, |value| {
-								value["id"].as_u64().unwrap()
-							})),
-							_ => panic!("id is not indexable!"),
-						},
-						_ => {
-							hashes.insert(name.clone(), Option::None);
-							continue;
-						}
-					},
-					_ => panic!(
-						"An object is exist in DB, but in schema it's refered as something else"
-					),
+	for obj in &schema.objects {
+		// This type exist in schema. Let's index
+		// WIP: Indexable props should be marked, but now let's just assume it's only ID for now.
+		let arr_classes = match db.get(&obj.name) {
+			Some(v) => v,
+			_ => {
+				hashes.insert(obj.name.clone(), Option::None);
+				continue;
+			}
+		};
+		let (field_name, hash) = (
+			"id".to_owned(),
+			match obj.find_field("id") {
+				Option::Some(field) => match field.data_type.kind.as_ref() {
+					"string" => FieldHashmaps::String(subindex_hashmaps(arr_classes, |value| {
+						value["id"].as_str().unwrap().to_string()
+					})),
+					"i32" => FieldHashmaps::I32(subindex_hashmaps(arr_classes, |value| {
+						value["id"].as_i64().unwrap().try_into().unwrap()
+					})),
+					"u64" => FieldHashmaps::U64(subindex_hashmaps(arr_classes, |value| {
+						value["id"].as_u64().unwrap()
+					})),
+					_ => panic!("id is not indexable!"),
 				},
-			);
+				_ => {
+					hashes.insert(obj.name.clone(), Option::None);
+					continue;
+				}
+			},
+		);
 
-			let mut type_hash = HashMap::new();
-			type_hash.insert(field_name, hash);
-			hashes.insert(name.clone(), Some(type_hash));
-		}
+		let mut type_hash = HashMap::new();
+		type_hash.insert(field_name, hash);
+		hashes.insert(obj.name.clone(), Some(type_hash));
 	}
 	hashes
 }

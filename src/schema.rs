@@ -1,7 +1,7 @@
 use super::{parsing, structure};
 use graphql_parser::schema::{Definition, Document, ObjectType, Type, TypeDefinition};
 use serde_json::Value as JSONValue;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::ops::Deref;
 
 pub fn get_field_type(t: &Type) -> structure::StructureReturnType {
@@ -30,8 +30,12 @@ pub fn get_field_type(t: &Type) -> structure::StructureReturnType {
 	r
 }
 
-pub fn get_data_type(t: &structure::StructureReturnType, d: &str) -> structure::StructureDataType {
-	let mut data_type = match &t.name[..] {
+pub fn get_data_type(
+	t: &structure::StructureReturnType,
+	d: &str,
+	n: &str,
+) -> structure::StructureDataType {
+	let mut data_type = match t.name.as_ref() {
 		"ID" => "string",
 		"Int" => "i32",
 		"Float" => "f64",
@@ -43,11 +47,35 @@ pub fn get_data_type(t: &structure::StructureReturnType, d: &str) -> structure::
 		data_type = "i32";
 	}
 	structure::StructureDataType {
-		resolver: None,
+		resolver: match n {
+			"Query" => Some(structure::StructureDataResolver {
+				kind: "ALL_REFERENCES".to_owned(),
+				args: Vec::default(),
+				flags: Vec::default(),
+			}),
+			"Mutation" => match &n[0..6] {
+				"create" => Some(structure::StructureDataResolver {
+					kind: "CREATE".to_owned(),
+					args: Vec::default(),
+					flags: vec![n[6..].to_owned()],
+				}),
+				"update" => Some(structure::StructureDataResolver {
+					kind: "UPDATE".to_owned(),
+					args: Vec::default(),
+					flags: vec![n[6..].to_owned()],
+				}),
+				"delete" => Some(structure::StructureDataResolver {
+					kind: "DELETE".to_owned(),
+					args: Vec::default(),
+					flags: vec![n[6..].to_owned()],
+				}),
+				_ => None,
+			},
+			_ => None,
+		},
 		kind: data_type.to_owned(),
 	}
 }
-
 
 fn traverse_object(object: &ObjectType) -> structure::StructureType {
 	let mut fields = Vec::new();
@@ -57,7 +85,7 @@ fn traverse_object(object: &ObjectType) -> structure::StructureType {
 			Some(v) => v.clone(),
 			_ => String::new(),
 		};
-		let data_type = get_data_type(&return_type, &description[..]);
+		let data_type = get_data_type(&return_type, description.as_ref(), object.name.as_ref());
 		fields.push(structure::StructureField {
 			name: field.name.clone(),
 			description: description,
@@ -67,7 +95,11 @@ fn traverse_object(object: &ObjectType) -> structure::StructureType {
 	}
 	structure::StructureType {
 		name: object.name.clone(),
-		description: object.description.as_ref().unwrap_or(&"".to_owned()).clone(),
+		description: object
+			.description
+			.as_ref()
+			.unwrap_or(&"".to_owned())
+			.clone(),
 		fields: fields,
 		hashed_fields: HashMap::new(),
 	}
@@ -76,10 +108,14 @@ fn traverse_object(object: &ObjectType) -> structure::StructureType {
 pub fn traverse_schema(doc: &Document) -> structure::StructureIndex {
 	let mut objects = Vec::new();
 	let mut enums = Vec::new();
+	let mut scalars = Vec::new();
 	for def in &doc.definitions {
 		match &def {
 			Definition::TypeDefinition(typedef) => match &typedef {
-				TypeDefinition::Scalar(_) => {}
+				TypeDefinition::Scalar(scl) => scalars.push(structure::StructureScalar {
+					name: scl.name.clone(),
+					description: scl.description.as_ref().unwrap_or(&"".to_owned()).clone(),
+				}),
 				TypeDefinition::Object(object) => {
 					objects.push(traverse_object(&object));
 				}
@@ -104,8 +140,10 @@ pub fn traverse_schema(doc: &Document) -> structure::StructureIndex {
 		name: "".to_owned(),
 		objects: objects,
 		enums: enums,
+		scalars: scalars,
 		hashed_objects: HashMap::new(),
-	}).into_perform_indexing()
+	})
+	.into_perform_indexing()
 }
 
 pub struct InstropectionParser {
@@ -113,10 +151,23 @@ pub struct InstropectionParser {
 	pub database: parsing::DatabaseIndex,
 }
 
-pub fn build_schema_instropection(doc: &structure::StructureIndex, instropection: structure::StructureIndex) -> InstropectionParser {
+pub fn build_schema_instropection(
+	doc: &structure::StructureIndex,
+	instropection: structure::StructureIndex,
+) -> InstropectionParser {
 	let mut fields = Vec::new();
 	let mut types = Vec::new();
 	let mut enums = Vec::new();
+
+	for object in &doc.scalars {
+		types.push(json!({
+			"id": object.name.clone(),
+			"name": object.name.clone(),
+			"kind": "SCALAR",
+			"description": &object.description,
+			"interfaces": []
+		}));
+	}
 
 	for object in &doc.objects {
 		let mut subfields = Vec::new();
@@ -129,7 +180,7 @@ pub fn build_schema_instropection(doc: &structure::StructureIndex, instropection
 				"args": [],
 				"type": field.return_type.name.clone(),
 			}));
-			subfields.push(object.name.clone() + "." + &field.name[..]);
+			subfields.push(object.name.clone() + "." + field.name.as_ref());
 		}
 		types.push(json!({
 			"id": object.name.clone(),
@@ -145,11 +196,11 @@ pub fn build_schema_instropection(doc: &structure::StructureIndex, instropection
 		let mut subvalues = Vec::new();
 		for (key, _) in &object.values {
 			enums.push(json!({
-				"id": object.name.clone()+"."+ &key[..],
+				"id": object.name.clone()+"."+ key.as_ref(),
 				"name": key.clone(),
 				"description": "".to_owned(),
 			}));
-			subvalues.push(object.name.clone() + "." + &key[..]);
+			subvalues.push(object.name.clone() + "." + key.as_ref());
 		}
 		types.push(json!({
 			"id": object.name.clone(),
@@ -166,7 +217,7 @@ pub fn build_schema_instropection(doc: &structure::StructureIndex, instropection
 		.map(|x| x["id"].clone())
 		.collect::<Vec<serde_json::Value>>();
 
-	for primitiv in vec!["ID", "Float", "Int", "String"] {
+	for primitiv in vec!["ID", "Float", "Int", "String", "Boolean"] {
 		types.push(json!({
 			"id": primitiv.clone(),
 			"name": primitiv.clone(),

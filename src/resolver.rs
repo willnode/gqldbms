@@ -1,17 +1,14 @@
+use super::{parsing, structure};
 use serde_json::Value as JSONValue;
 use std::collections::HashMap;
-use super::{parsing, structure};
 
 pub type ResolverArgs = Vec<(String, graphql_parser::query::Value)>;
 
 pub struct ResolverContext<'a> {
 	pub parser: &'a parsing::QueryParser,
 	pub variables: &'a serde_json::Map<String, JSONValue>,
-	pub fragments: &'a HashMap<std::string::String, &'a graphql_parser::query::FragmentDefinition>
+	pub fragments: &'a HashMap<std::string::String, &'a graphql_parser::query::FragmentDefinition>,
 }
-
-// pub type ResolverFn<'a> =
-// 	dyn Fn(&'a JSONValue, &'a ResolverArgs, &'a ResolverContext) -> &'a JSONValue;
 
 pub fn resolve(
 	parent: &JSONValue,
@@ -20,15 +17,20 @@ pub fn resolve(
 	info: &structure::StructureField,
 ) -> JSONValue {
 	match &info.data_type.resolver {
-		Some(v) if v.kind == "ALL_REFERENCES" => {
-			all_references_resolver(&parent, &args, &context, &info)
-		}
+		Some(v) => match v.kind.as_ref() {
+			"CREATE" => create_resolver(&parent, &args, &context, &info),
+			"UPDATE" => update_resolver(&parent, &args, &context, &info),
+			"DELETE" => delete_resolver(&parent, &args, &context, &info),
+			"ALL_REFERENCES" => all_references_resolver(&parent, &args, &context, &info),
+			"SUBTITUTION" => subtitution_resolver(&parent, &args, &context, &info),
+			"DATA" | _ => data_resolver(&parent, &args, &context, &info),
+		},
 		_ => data_resolver(&parent, &args, &context, &info),
 	}
 }
 
-fn all_references_resolver<'a>(
-	_parent: &'a JSONValue,
+fn all_references_resolver(
+	_parent: &JSONValue,
 	_args: &ResolverArgs,
 	context: &ResolverContext,
 	info: &structure::StructureField,
@@ -36,7 +38,10 @@ fn all_references_resolver<'a>(
 	if !info.return_type.is_array {
 		context.parser.database[&info.return_type.name[..]][0]["id"].clone()
 	} else {
-		json!(context.parser.database[&info.return_type.name[..]].iter().map(|x| x["id"].clone()).collect::<Vec<JSONValue>>())
+		json!(context.parser.database[&info.return_type.name[..]]
+			.iter()
+			.map(|x| x["id"].clone())
+			.collect::<Vec<JSONValue>>())
 	}
 }
 
@@ -52,3 +57,46 @@ fn data_resolver(
 		n @ _ => n.clone(),
 	}
 }
+
+fn subtitution_resolver(
+	_parent: &JSONValue,
+	_args: &ResolverArgs,
+	_context: &ResolverContext,
+	_info: &structure::StructureField,
+) -> JSONValue {
+	println!("CREATE");
+	JSONValue::Null
+}
+
+
+fn create_resolver(
+	_parent: &JSONValue,
+	_args: &ResolverArgs,
+	_context: &ResolverContext,
+	_info: &structure::StructureField,
+) -> JSONValue {
+	println!("CREATE");
+	JSONValue::Null
+}
+
+fn update_resolver(
+	_parent: &JSONValue,
+	_args: &ResolverArgs,
+	_context: &ResolverContext,
+	_info: &structure::StructureField,
+) -> JSONValue {
+	println!("UPDATE");
+	JSONValue::Null
+}
+
+fn delete_resolver(
+	_parent: &JSONValue,
+	_args: &ResolverArgs,
+	_context: &ResolverContext,
+	_info: &structure::StructureField,
+) -> JSONValue {
+	println!("DELETE");
+	JSONValue::Null
+}
+
+

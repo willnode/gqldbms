@@ -3,10 +3,10 @@ extern crate serde_json;
 extern crate hyper;
 pub mod indexing;
 pub mod parsing;
+pub mod resolver;
 pub mod schema;
 pub mod structure;
 pub mod utility;
-pub mod resolver;
 
 use futures::future;
 use hyper::rt::{Future, Stream};
@@ -59,10 +59,7 @@ impl App {
             .iter()
             .map(|db| {
                 println!("Loading {}", db.name);
-                (
-                    db.name.clone(),
-                    utility::load_db(&db.name[..]),
-                )
+                (db.name.clone(), utility::load_db(db.name.as_ref()))
             })
             .collect::<HashMap<String, parsing::QueryParser>>();
         dbs.insert("".to_owned(), utility::load_canonical(&dbs));
@@ -79,14 +76,26 @@ impl App {
             .join(&req.uri().to_string())
             .unwrap();
         let mut db = urlpa.query_pairs();
-        let dbb = db
-            .find(|(k, _)| k == "db")
-            .unwrap_or((
-                std::borrow::Cow::Borrowed("db"),
-                std::borrow::Cow::Borrowed(""),
-            ))
-            .1;
-        let parser = self.parser[&dbb[..]].clone();
+        let dbb = match &db.find(|(k, _)| k == "db") {
+            Some(v) => (&v.1).to_string(),
+            _ => "".to_owned(),
+        };
+        let parser = self.parser.get(&dbb[..]);
+        let parser = match parser {
+            Some(v) => v,
+            _ => {
+                return Box::new(future::ok(
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .body(Body::from(
+                            json!({"data":null, "error":"Database entry not found"}).to_string(),
+                        ))
+                        .unwrap(),
+                ));
+            }
+        };
+        let parser = parser.clone();
+
         Box::new(
             req.into_body()
                 .concat2() // Concatenate all chunks in the body
