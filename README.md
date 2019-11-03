@@ -2,9 +2,7 @@
 
 A simple drop-in web server written in Rust for database powered with [GraphQL](https://graphql.org).
 
-No need to write resolvers, No need to depends on separate SQL servers. Just write the schema and run!
-
-**Warning**: Currently it's very experimental, unoptimized, insecure, and only works with simple queries.
+No need to write resolvers, No need to depends on separate SQL servers.
 
 ## How it Works
 

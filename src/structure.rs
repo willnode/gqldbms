@@ -1,4 +1,3 @@
-use super::utility;
 use serde_json::Value as JSONValue;
 use std::collections::HashMap;
 
@@ -102,15 +101,14 @@ pub struct StructureField {
 	pub data_type: StructureDataType,
 	pub return_type: StructureReturnType,
 }
+
 impl StructureField {
-	pub fn from(name: String, description: String, kind: String, array: bool) -> StructureField {
+	pub fn from(name: String, description: String, kind: String, array: bool, resolver: Option<StructureDataResolver>) -> StructureField {
 		StructureField {
 			name: name,
 			description: description,
 			data_type: StructureDataType {
-				resolver: None,
-				backreference: None,
-				default: None,
+				resolver: resolver,
 				kind: match &kind[..] {
 					"ID" => "string",
 					"Int" => "i32",
@@ -132,8 +130,6 @@ impl StructureField {
 #[derive(serde_derive::Deserialize, serde_derive::Serialize, Clone, Debug)]
 pub struct StructureDataType {
 	pub kind: String,
-	pub default: Option<StructureDataDefault>,
-	pub backreference: Option<String>,
 	pub resolver: Option<StructureDataResolver>,
 }
 
@@ -155,10 +151,4 @@ pub struct StructureDataResolver {
 	pub kind: String,
 	pub flags: Vec<String>,
 	pub args: Vec<StructureReturnType>,
-}
-
-pub fn read_structure(db: &str) -> StructureIndex {
-	let data = utility::read_db_file(&format!("{}/structure.json", db)[..]);
-	serde_json::from_str::<StructureIndex>(&data)
-		.expect("File `database/structure.json` is not valid JSON object!")
 }

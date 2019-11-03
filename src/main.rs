@@ -6,6 +6,7 @@ pub mod parsing;
 pub mod schema;
 pub mod structure;
 pub mod utility;
+pub mod resolver;
 
 use futures::future;
 use hyper::rt::{Future, Stream};
@@ -42,6 +43,7 @@ struct App {
     parser: HashMap<String, parsing::QueryParser>,
     statics: HashMap<String, String>,
 }
+
 impl App {
     pub fn new() -> App {
         let files = vec!["graphiql.html", "index.html"];
@@ -52,24 +54,18 @@ impl App {
         let config: Config = toml::from_str(&utility::read_db_file("config.toml")[..])
             .expect("config.toml is not valid!");
 
-        let dbs = config
+        let mut dbs = config
             .database
             .iter()
             .map(|db| {
-                let sch = schema::traverse_schema(&schema::read_schema(
-                    &format!("{}/schema.gql", db.name)[..],
-                ));
-                utility::write_db_file(
-                    &format!("{}/schema.json", db.name)[..],
-                    json!(sch).to_string().as_bytes().to_vec(),
-                );
                 println!("Loading {}", db.name);
                 (
                     db.name.clone(),
-                    parsing::QueryParser::new(parsing::read_database(&db.name[..]), sch),
+                    utility::load_db(&db.name[..]),
                 )
             })
             .collect::<HashMap<String, parsing::QueryParser>>();
+        dbs.insert("".to_owned(), utility::load_canonical(&dbs));
         App {
             parser: dbs,
             statics: filess,

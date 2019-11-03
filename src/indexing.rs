@@ -1,5 +1,5 @@
-use super::structure;
 use super::parsing;
+use super::structure;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -15,7 +15,6 @@ pub enum FieldHashmaps {
 // Type, PropertyName (usually "id"), ValueOfProperty. returns index in database
 // Valid for database lifetimes
 pub type DatabaseHashmaps = HashMap<String, Option<HashMap<String, FieldHashmaps>>>;
-
 
 pub fn subindex_keys<T, F>(classes: &Vec<Value>, converter: F) -> Vec<T>
 where
@@ -34,18 +33,25 @@ where
 	F: Fn(&Value) -> T,
 	T: std::hash::Hash + Eq,
 {
-	let mut h : HashMap<T, Vec<usize>> = HashMap::new();
+	let mut h: HashMap<T, Vec<usize>> = HashMap::new();
 	for (index, value) in classes.iter().enumerate() {
 		let key = converter(&value);
 		match h.get_mut(&key) {
-			Some(n) => { n.push(index); },
-			None => { h.insert(key, vec![index]); }
+			Some(n) => {
+				n.push(index);
+			}
+			None => {
+				h.insert(key, vec![index]);
+			}
 		}
 	}
 	h
 }
 
-pub fn build_hashmaps(db: &parsing::DatabaseIndex, schema: &structure::StructureIndex) -> DatabaseHashmaps {
+pub fn build_hashmaps(
+	db: &parsing::DatabaseIndex,
+	schema: &structure::StructureIndex,
+) -> DatabaseHashmaps {
 	let mut hashes: DatabaseHashmaps = HashMap::new();
 	for (name, classes) in db {
 		if !schema.hashed_objects.contains_key(name) {
@@ -60,24 +66,24 @@ pub fn build_hashmaps(db: &parsing::DatabaseIndex, schema: &structure::Structure
 				"id".to_owned(),
 				match &schema.find_object(name) {
 					structure::StructureItem::Object(obj) => match obj.find_field("id") {
-						Option::Some(field) => {
-							match &field.data_type.kind[..] {
-								"string" => FieldHashmaps::String(subindex_hashmaps(
-									arr_classes,
-									|value| value["id"].as_str().unwrap().to_string(),
-								)),
-								"i32" => FieldHashmaps::I32(subindex_hashmaps(
-									arr_classes,
-									|value| value["id"].as_i64().unwrap().try_into().unwrap(),
-								)),
-								"u64" => FieldHashmaps::U64(subindex_hashmaps(
-									arr_classes,
-									|value| value["id"].as_u64().unwrap(),
-								)),
-								_ => panic!("id is not indexable!"),
+						Option::Some(field) => match &field.data_type.kind[..] {
+							"string" => {
+								FieldHashmaps::String(subindex_hashmaps(arr_classes, |value| {
+									value["id"].as_str().unwrap().to_string()
+								}))
 							}
+							"i32" => FieldHashmaps::I32(subindex_hashmaps(arr_classes, |value| {
+								value["id"].as_i64().unwrap().try_into().unwrap()
+							})),
+							"u64" => FieldHashmaps::U64(subindex_hashmaps(arr_classes, |value| {
+								value["id"].as_u64().unwrap()
+							})),
+							_ => panic!("id is not indexable!"),
+						},
+						_ => {
+							hashes.insert(name.clone(), Option::None);
+							continue;
 						}
-						_ => panic!("id is not exist in one of schema class!"),
 					},
 					_ => panic!(
 						"An object is exist in DB, but in schema it's refered as something else"

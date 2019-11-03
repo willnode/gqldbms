@@ -1,5 +1,4 @@
-use super::{parsing, structure, utility};
-use graphql_parser::parse_schema;
+use super::{parsing, structure};
 use graphql_parser::schema::{Definition, Document, ObjectType, Type, TypeDefinition};
 use serde_json::Value as JSONValue;
 use std::collections::{HashMap};
@@ -44,18 +43,11 @@ pub fn get_data_type(t: &structure::StructureReturnType, d: &str) -> structure::
 		data_type = "i32";
 	}
 	structure::StructureDataType {
-		backreference: None,
-		default: None, // ID TODO
 		resolver: None,
 		kind: data_type.to_owned(),
 	}
 }
 
-pub fn read_schema(path: &str) -> Document {
-	let data = utility::read_db_file(path);
-	parse_schema(&data)
-		.expect(&format!("File `database/{}` is not valid GraphQL schema!", path)[..])
-}
 
 fn traverse_object(object: &ObjectType) -> structure::StructureType {
 	let mut fields = Vec::new();
@@ -121,7 +113,7 @@ pub struct InstropectionParser {
 	pub database: parsing::DatabaseIndex,
 }
 
-pub fn build_schema_instropection(doc: &structure::StructureIndex) -> InstropectionParser {
+pub fn build_schema_instropection(doc: &structure::StructureIndex, instropection: structure::StructureIndex) -> InstropectionParser {
 	let mut fields = Vec::new();
 	let mut types = Vec::new();
 	let mut enums = Vec::new();
@@ -184,7 +176,7 @@ pub fn build_schema_instropection(doc: &structure::StructureIndex) -> Instropect
 		}));
 	}
 	InstropectionParser {
-		schema: traverse_schema(&read_schema("instropection.gql")),
+		schema: instropection,
 		database: [
 			(
 				"__Schema".to_owned(),
