@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate serde_json;
 extern crate hyper;
+extern crate serde;
+
+pub mod canonical;
 pub mod indexing;
 pub mod parsing;
 pub mod resolver;
@@ -9,17 +12,17 @@ pub mod structure;
 pub mod utility;
 
 use futures::future;
+use graphql_parser::parse_query;
 use hyper::rt::{Future, Stream};
 use hyper::service::service_fn;
 use hyper::{header, Body, Method, Request, Response, Server, StatusCode};
+use serde_derive::Deserialize;
+use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
 type ResponseFuture = Box<dyn Future<Item = Response<Body>, Error = GenericError> + Send>;
-
-use graphql_parser::parse_query;
-use serde_json::Value;
-extern crate serde;
-use serde_derive::Deserialize;
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -40,7 +43,7 @@ pub struct ConfigDatabase {
 
 #[derive(Clone)]
 struct App {
-    parser: HashMap<String, parsing::QueryParser>,
+    parser: parsing::DatabaseDirectory,
     statics: HashMap<String, String>,
 }
 
@@ -54,15 +57,20 @@ impl App {
         let config: Config = toml::from_str(&utility::read_db_file("config.toml")[..])
             .expect("config.toml is not valid!");
 
-        let mut dbs = config
-            .database
-            .iter()
-            .map(|db| {
-                println!("Loading {}", db.name);
-                (db.name.clone(), utility::load_db(db.name.as_ref()))
-            })
-            .collect::<HashMap<String, parsing::QueryParser>>();
-        dbs.insert("".to_owned(), utility::load_canonical(&dbs));
+        let dbs = Arc::new(RwLock::new(HashMap::new()));
+        for db in &config.database {
+            let dbss = dbs.clone();
+            let dddd = &mut *dbs.write().unwrap();
+            println!("Loading {}", db.name);
+            dddd.insert(db.name.clone(), utility::load_db(&db.name[..], dbss));
+        }
+        {
+            println!("Loading canonical");
+            let dbss = dbs.clone();
+            let canonical = utility::load_canonical(dbss);
+            (*dbs.write().unwrap()).insert("canonical".to_owned(), canonical);
+        }
+        println!("Ready...");
         App {
             parser: dbs,
             statics: filess,
@@ -80,29 +88,42 @@ impl App {
             Some(v) => (&v.1).to_string(),
             _ => "".to_owned(),
         };
-        let parser = self.parser.get(&dbb[..]);
-        let parser = match parser {
-            Some(v) => v,
-            _ => {
-                return Box::new(future::ok(
-                    Response::builder()
-                        .status(StatusCode::OK)
-                        .body(Body::from(
-                            json!({"data":null, "error":"Database entry not found"}).to_string(),
-                        ))
-                        .unwrap(),
-                ));
-            }
-        };
-        let parser = parser.clone();
+        let parser = self.parser.clone();
+        // let parser = self.parser.get(&dbb[..]);
+        // let parser = match parser {
+        //     Some(v) => v,
+        //     _ => {
+        //         return Box::new(future::ok(
+        //             Response::builder()
+        //                 .status(StatusCode::OK)
+        //                 .body(Body::from(
+        //                     json!({"data":null, "error":"Database entry not found"}).to_string(),
+        //                 ))
+        //                 .unwrap(),
+        //         ));
+        //     }
+        // };
+        // let parser = parser;
 
         Box::new(
             req.into_body()
                 .concat2() // Concatenate all chunks in the body
                 .from_err()
-                .and_then(|entire_body| {
+                .and_then(move |entire_body| {
                     // TODO: Replace all unwraps with proper error handling
-                    let parser = parser;
+                    let parser2 = &*parser.read().unwrap_or_else(|e| e.into_inner());
+                    let parser3 = match parser2.get(&dbb[..]) {
+                        Some(v) => v,
+                        _ => {
+                            return Ok(Response::builder()
+                                .status(StatusCode::OK)
+                                .body(Body::from(
+                                    json!({"data":null, "error":"Database entry not found"})
+                                        .to_string(),
+                                ))
+                                .unwrap())
+                        }
+                    };
                     let str = String::from_utf8(entire_body.to_vec())?;
                     let data: serde_json::Value = serde_json::from_str(&str)?;
                     let query = match &data["query"] {
@@ -117,7 +138,7 @@ impl App {
 
                     match parse_query(&query) {
                         Ok(v) => {
-                            let values = parser.traverse_query(&v, &vars);
+                            let values = parser3.traverse_query(&v, &vars);
                             let data = json!({ "data": values });
                             Ok(Response::builder()
                                 .status(StatusCode::OK)

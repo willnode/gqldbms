@@ -2,8 +2,7 @@ use super::{parsing, schema, structure};
 use graphql_parser::query::Value as GraphValue;
 use serde_json::Value as JSONValue;
 use std::fs::File;
-use std::io::Read;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::collections::HashMap;
 
 pub fn read_file(uri: &str) -> String {
@@ -66,7 +65,7 @@ fn read_schema(path: &str) -> graphql_parser::schema::Document {
 		.expect(&format!("File `database/{}` is not valid GraphQL schema!", path)[..])
 }
 
-pub fn load_db(name: &str) -> parsing::QueryParser {
+pub fn load_db(name: &str, directory: parsing::DatabaseDirectory) -> parsing::QueryParser {
 	let (json_path, schema_path, gql_path, instropection_path) = (
 		format!("database/{}/data.json", name),
 		format!("database/{}/schema.json", name),
@@ -78,15 +77,15 @@ pub fn load_db(name: &str) -> parsing::QueryParser {
 	let sch = if std::fs::metadata(schema_path.clone()).is_ok() {
 		read_structure(schema_path.as_ref()).into_perform_indexing()
 	} else {
-		let sch = schema::traverse_schema(&read_schema(gql_path.as_ref()));
+		let sch = schema::traverse_schema(name, &read_schema(gql_path.as_ref()));
 		write_file(schema_path.as_ref(), json!(sch).to_string().as_bytes().to_vec());
 		sch
 	};
-	let intros = schema::traverse_schema(&read_schema(instropection_path.as_ref()));
-	parsing::QueryParser::new(db, sch, intros)
+	let intros = schema::traverse_schema("instropection", &read_schema(instropection_path.as_ref()));
+	parsing::QueryParser::new(db, sch, intros, directory)
 }
 
-pub fn load_canonical(all_db: &HashMap<String, parsing::QueryParser>) -> parsing::QueryParser {
+pub fn load_canonical(directory: parsing::DatabaseDirectory) -> parsing::QueryParser {
 	let (gql_path, instropection_path) = (
 		format!("database/canonical.gql"),
 		format!("database/instropection.gql")
@@ -95,7 +94,7 @@ pub fn load_canonical(all_db: &HashMap<String, parsing::QueryParser>) -> parsing
 	let mut objects = Vec::new();
 	// let mut fields = Vec::new();
 
-	for (key, val) in all_db {
+	for (key, val) in &*directory.read().unwrap(){
 		for valt in &val.schema.objects {
 			objects.push(json!({
 				"id": format!("{}.{}", key, valt.name),
@@ -117,10 +116,10 @@ pub fn load_canonical(all_db: &HashMap<String, parsing::QueryParser>) -> parsing
 			"databases": []
 		})])
 	].iter().cloned().collect();
-	let sch =  schema::traverse_schema(&read_schema(gql_path.as_ref()));
+	let sch =  schema::traverse_schema("canonical", &read_schema(gql_path.as_ref()));
 	// write_file(schema_path.as_ref(), json!(sch).to_string().as_bytes().to_vec());
-	let intros = schema::traverse_schema(&read_schema(instropection_path.as_ref()));
-	let mut res = parsing::QueryParser::new(db, sch, intros);
+	let intros = schema::traverse_schema("instropection", &read_schema(instropection_path.as_ref()));
+	let mut res = parsing::QueryParser::new(db, sch, intros, directory);
 	res.is_canonical = true;
 	res
 }

@@ -105,7 +105,7 @@ fn traverse_object(object: &ObjectType) -> structure::StructureType {
 	}
 }
 
-pub fn traverse_schema(doc: &Document) -> structure::StructureIndex {
+pub fn traverse_schema(name: &str, doc: &Document) -> structure::StructureIndex {
 	let mut objects = Vec::new();
 	let mut enums = Vec::new();
 	let mut scalars = Vec::new();
@@ -137,7 +137,7 @@ pub fn traverse_schema(doc: &Document) -> structure::StructureIndex {
 		}
 	}
 	(structure::StructureIndex {
-		name: "".to_owned(),
+		name: name.to_owned(),
 		objects: objects,
 		enums: enums,
 		scalars: scalars,

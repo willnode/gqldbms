@@ -1,13 +1,26 @@
 use super::{parsing, structure};
 use serde_json::Value as JSONValue;
 use std::collections::HashMap;
+use graphql_parser::query::FragmentDefinition;
 
 pub type ResolverArgs = Vec<(String, graphql_parser::query::Value)>;
 
-pub struct ResolverContext<'a> {
-	pub parser: &'a parsing::QueryParser,
+
+pub struct GenericResolverContext<'a> {
 	pub variables: &'a serde_json::Map<String, JSONValue>,
-	pub fragments: &'a HashMap<std::string::String, &'a graphql_parser::query::FragmentDefinition>,
+	pub fragments: &'a HashMap<String, &'a FragmentDefinition>,
+}
+
+pub struct ResolverContext<'a> {
+	pub parser: &'a mut parsing::QueryParser,
+	pub variables: &'a serde_json::Map<String, JSONValue>,
+	pub fragments: &'a HashMap<String, &'a FragmentDefinition>,
+}
+
+pub struct CanonicalResolverContext<'a> {
+	pub database: &'a mut HashMap<String, parsing::QueryParser>,
+	pub variables: &'a serde_json::Map<String, JSONValue>,
+	pub fragments: &'a HashMap<String, &'a FragmentDefinition>,
 }
 
 pub fn resolve(
@@ -23,7 +36,7 @@ pub fn resolve(
 			"DELETE" => delete_resolver(&parent, &args, &context, &info),
 			"ALL_REFERENCES" => all_references_resolver(&parent, &args, &context, &info),
 			"SUBTITUTION" => subtitution_resolver(&parent, &args, &context, &info),
-			"DATA" | _ => data_resolver(&parent, &args, &context, &info),
+			"DATA" | "BACKREFERENCE" | _ => data_resolver(&parent, &args, &context, &info),
 		},
 		_ => data_resolver(&parent, &args, &context, &info),
 	}

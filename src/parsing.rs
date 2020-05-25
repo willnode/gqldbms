@@ -3,8 +3,11 @@ use serde_json::Value as JSONValue;
 
 use super::{indexing, resolver, schema, structure};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 pub type DatabaseIndex = HashMap<String, Vec<JSONValue>>;
+
+pub type DatabaseDirectory = Arc<RwLock<HashMap<String, QueryParser>>>;
 
 #[derive(Clone)]
 pub struct QueryParser {
@@ -12,6 +15,7 @@ pub struct QueryParser {
 	pub database: DatabaseIndex,
 	pub hashmaps: indexing::DatabaseHashmaps,
 	pub is_canonical: bool,
+	pub directory: DatabaseDirectory,
 }
 
 impl QueryParser {
@@ -19,6 +23,7 @@ impl QueryParser {
 		database: DatabaseIndex,
 		schema: structure::StructureIndex,
 		instropection: structure::StructureIndex,
+		directory: DatabaseDirectory
 	) -> QueryParser {
 		// Load necessary files (should be done before server starts, actually)
 		let mut schema = schema;
@@ -89,11 +94,13 @@ impl QueryParser {
 		}
 		// println!("{}", json!(db));
 		let hashmap = indexing::build_hashmaps(&db, &schema);
+		let is_canonical = schema.name == "canonical";
 		QueryParser {
 			schema: schema,
 			database: db,
 			hashmaps: hashmap,
-			is_canonical: false,
+			is_canonical: is_canonical,
+			directory: directory,
 		}
 	}
 
@@ -161,10 +168,17 @@ impl QueryParser {
 		parent: &JSONValue,
 		args: &Vec<(String, graphql_parser::query::Value)>,
 		selector: &graphql_parser::query::Field,
-		context: &resolver::ResolverContext,
+		context: &resolver::GenericResolverContext,
 		info: &structure::StructureField,
 	) -> JSONValue {
-		match resolver::resolve(parent, args, context, info) {
+		println!("I am dead");
+		let written = &mut (*self.directory.write().unwrap());
+		println!("I am alive");
+		match resolver::resolve(parent, args, &resolver::ResolverContext {
+			fragments: context.fragments,
+			variables: context.variables,
+			parser: written.get_mut(&self.schema.name[..]).unwrap(),
+		}, info) {
 			JSONValue::Null => JSONValue::Null,
 			results @ _ => self.traverse_selection(
 				&self.resolve_id_to_object(&results, &info.return_type.name),
@@ -179,7 +193,7 @@ impl QueryParser {
 		&self,
 		parent: &JSONValue,
 		selector: &SelectionSet,
-		context: &resolver::ResolverContext,
+		context: &resolver::GenericResolverContext,
 		info: &str,
 	) -> JSONValue {
 		match parent {
@@ -279,10 +293,9 @@ impl QueryParser {
 		self.traverse_selection(
 			&self.database[subset.1][0],
 			&subset.0,
-			&resolver::ResolverContext {
+			&resolver::GenericResolverContext {
 				fragments: &fragments,
 				variables: &variables,
-				parser: &self,
 			},
 			subset.1,
 		)
